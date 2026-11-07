@@ -420,6 +420,10 @@ def probe(url):
     """True = on air, False = broken, None = can't tell now. Reads at most a few KB (a playlist, or the first bytes
     of a TS stream) and closes the connection at once."""
     try:
+        _check_url(url)
+    except IptvError:
+        return None
+    try:
         r = _http.get(_hls_link(url), timeout=15, stream=True)
     except requests.exceptions.ConnectionError:
         return False
