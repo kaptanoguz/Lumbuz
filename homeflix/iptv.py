@@ -62,7 +62,8 @@ def _public(r, viewer):
     info = json.loads(r['info'] or '{}')
     return {'id': r['id'], 'name': r['name'], 'kind': r['kind'], 'count': r['count'] or 0, 'updated': r['updated_at'],
             'shared': bool(r['shared']), 'mine': r['viewer'] == viewer, 'error': r['error'] or '',
-            'exp': info.get('exp'), 'max': info.get('max'), 'status': info.get('status')}
+            'exp': info.get('exp'), 'max': info.get('max'), 'status': info.get('status'), 'dead': len(_dead(r['id'])),
+            'checking': check_status(r['id'])}
 
 
 def sources(viewer):
@@ -309,10 +310,12 @@ def remove(sid, viewer):
         return False
     with session() as c:
         c.execute("DELETE FROM iptv_sources WHERE id = ?", (sid,))
-    try:
-        os.remove(_list_file(sid))
-    except OSError:
-        pass
+    stop_check(sid)
+    for path in (_list_file(sid), _dead_file(sid)):
+        try:
+            os.remove(path)
+        except OSError:
+            pass
     with _lock:
         _cache.pop(sid, None)
     return True
@@ -324,9 +327,12 @@ def _fold(s):
     return (s or '').replace('ı', 'i').replace('İ', 'i').casefold()
 
 
-def groups(sid):
+def groups(sid, show_dead=False):
+    dead = {} if show_dead else _dead(sid)
     counts, order = {}, []
     for it in _load_list(sid):
+        if it['url'] in dead:
+            continue
         g = it.get('g') or ''
         if g not in counts:
             counts[g] = 0
@@ -335,14 +341,151 @@ def groups(sid):
     return [{'n': g, 'c': counts[g]} for g in order]
 
 
-def channels(sid, group=None, q='', offset=0, limit=PAGE, number=None):
+def channels(sid, group=None, q='', offset=0, limit=PAGE, number=None, show_dead=False):
     items = _load_list(sid)
+    dead = _dead(sid)
     if number:
         hit = items[number - 1] if 0 < number <= len(items) else None
         return {'items': [hit] if hit else [], 'total': 1 if hit else 0}
     f = _fold(q.strip())
-    out = [it for it in items if (group is None or (it.get('g') or '') == group) and (not f or f in _fold(it['n']))]
-    return {'items': out[offset:offset + limit], 'total': len(out)}
+    out = [it for it in items if (group is None or (it.get('g') or '') == group) and (not f or f in _fold(it['n']))
+           and (show_dead or it['url'] not in dead)]
+    page = [{**it, 'dead': 1} if it['url'] in dead else it for it in out[offset:offset + limit]]
+    return {'items': page, 'total': len(out)}
+
+
+# ---------------------------------------------------------------- broken channels
+# A channel whose stream is gone (the provider answers "not found", the server is unreachable, or the playlist is
+# empty) is hidden from the list. The mark is kept for DEAD_DAYS, then the channel is shown and checked again, so a
+# channel that comes back reappears by itself. Answers that only say "not now" (login refused, too many
+# connections, server busy) never hide a channel: with a full connection limit every channel would look broken.
+
+DEAD_DAYS = 7
+CHECK_GAP = 1.5  # seconds between two channels, so the provider doesn't see a flood of requests
+_dead_cache = {}
+_checks = {}  # source id -> {'running', 'done', 'total', 'dead', 'stop'}
+
+
+def _dead_file(sid):
+    return os.path.join(IPTV_DIR, f'{int(sid)}.dead.json')
+
+
+def _dead(sid):
+    with _lock:
+        hit = _dead_cache.get(sid)
+    if hit is None:
+        try:
+            with open(_dead_file(sid), encoding='utf-8') as f:
+                hit = json.load(f)
+        except (OSError, ValueError):
+            hit = {}
+        cutoff = time.time() - DEAD_DAYS * 86400
+        hit = {u: t for u, t in hit.items() if t > cutoff}
+        with _lock:
+            _dead_cache[sid] = hit
+    return hit
+
+
+def _save_dead(sid, dead):
+    with _lock:
+        _dead_cache[sid] = dead
+    tmp = _dead_file(sid) + '.tmp'
+    with open(tmp, 'w', encoding='utf-8') as f:
+        json.dump(dead, f)
+    os.replace(tmp, _dead_file(sid))
+
+
+def _mark(sid, url, broken):
+    dead = dict(_dead(sid))
+    if broken:
+        dead[url] = time.time()
+    elif url in dead:
+        del dead[url]
+    else:
+        return
+    _save_dead(sid, dead)
+
+
+def clear_dead(sid):
+    _save_dead(sid, {})
+
+
+def _hls_link(u):
+    """Xtream channels also come as HLS (/live/user/pass/id.m3u8): a few KB of text to read instead of video."""
+    m = re.match(r'^(https?://[^/]+)/(?:live/)?([^/]+)/([^/]+)/(\d+)(?:\.ts)?$', u)
+    return f'{m.group(1)}/live/{m.group(2)}/{m.group(3)}/{m.group(4)}.m3u8' if m else u
+
+
+def probe(url):
+    """True = on air, False = broken, None = can't tell now. Reads at most a few KB (a playlist, or the first bytes
+    of a TS stream) and closes the connection at once."""
+    try:
+        _check_url(url)
+    except IptvError:
+        return None
+    try:
+        r = _http.get(_hls_link(url), timeout=15, stream=True)
+    except requests.exceptions.ConnectionError:
+        return False
+    except requests.RequestException:
+        return None
+    try:
+        if r.status_code in (404, 410):
+            return False
+        if r.status_code != 200:
+            return None
+        head = r.raw.read(4096, decode_content=True)
+    except (requests.RequestException, OSError):
+        return None
+    finally:
+        r.close()
+    if not head:
+        return False
+    text = head.decode('utf-8', 'replace')
+    if '#EXTM3U' in text[:1024]:
+        return '#EXTINF' in text or '#EXT-X-STREAM-INF' in text or '.ts' in text or '.m3u8' in text
+    return head[:1] == b'\x47' or len(head) >= 1024  # MPEG-TS starts with 0x47
+
+
+def report_failure(sid, url):
+    """A device couldn't play a channel: the server tries it once itself and hides it only if it is really gone."""
+    if any(it['url'] == url for it in _load_list(sid)):
+        threading.Thread(target=lambda: probe(url) is False and _mark(sid, url, True), daemon=True).start()
+
+
+def check_status(sid):
+    st = _checks.get(sid)
+    return {k: st[k] for k in ('running', 'done', 'total', 'dead')} if st else {'running': False}
+
+
+def start_check(sid, group=None):
+    """Checks every channel of the list (or one group) one by one in the background."""
+    if _checks.get(sid, {}).get('running'):
+        return check_status(sid)
+    items = [it for it in _load_list(sid) if group is None or (it.get('g') or '') == group]
+    st = _checks[sid] = {'running': True, 'done': 0, 'total': len(items), 'dead': 0, 'stop': False}
+
+    def run():
+        try:
+            for it in items:
+                if st['stop']:
+                    break
+                ok = probe(it['url'])
+                if ok is False:
+                    st['dead'] += 1
+                if ok is not None:
+                    _mark(sid, it['url'], not ok)
+                st['done'] += 1
+                time.sleep(CHECK_GAP)
+        finally:
+            st['running'] = False
+    threading.Thread(target=run, daemon=True).start()
+    return check_status(sid)
+
+
+def stop_check(sid):
+    if sid in _checks:
+        _checks[sid]['stop'] = True
 
 
 # ---------------------------------------------------------------- playlist pass-through

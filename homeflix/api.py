@@ -898,7 +898,7 @@ def api_iptv_refresh(sid):
 @app.route('/api/iptv/<int:sid>/groups')
 def api_iptv_groups(sid):
     iptv.refresh_if_old(_iptv_source(sid))
-    return jsonify(iptv.groups(sid))
+    return jsonify(iptv.groups(sid, request.args.get('dead') == '1'))
 
 
 @app.route('/api/iptv/<int:sid>/channels')
@@ -907,7 +907,35 @@ def api_iptv_channels(sid):
     g = request.args.get('g')
     return jsonify(iptv.channels(sid, g, request.args.get('q', '')[:80], max(0, request.args.get('off', 0, type=int)),
                                  min(500, max(1, request.args.get('lim', iptv.PAGE, type=int))),
-                                 request.args.get('no', 0, type=int)))
+                                 request.args.get('no', 0, type=int), request.args.get('dead') == '1'))
+
+
+@app.route('/api/iptv/<int:sid>/fail', methods=['POST'])
+def api_iptv_fail(sid):
+    _iptv_source(sid)
+    d = request.get_json(force=True, silent=True) or {}
+    iptv.report_failure(sid, str(d.get('url', ''))[:2000])
+    return ('', 204)
+
+
+@app.route('/api/iptv/<int:sid>/check', methods=['GET', 'POST', 'DELETE'])
+def api_iptv_check(sid):
+    """Checks the list's channels in the background (POST, optional group), its progress (GET), stop (DELETE)."""
+    _iptv_source(sid)
+    if request.method == 'DELETE':
+        iptv.stop_check(sid)
+    elif request.method == 'POST':
+        d = request.get_json(force=True, silent=True) or {}
+        return jsonify(iptv.start_check(sid, d.get('g')))
+    return jsonify(iptv.check_status(sid))
+
+
+@app.route('/api/iptv/<int:sid>/dead', methods=['DELETE'])
+def api_iptv_dead(sid):
+    """Shows every hidden channel again."""
+    _iptv_source(sid)
+    iptv.clear_dead(sid)
+    return ('', 204)
 
 
 @app.route('/api/iptv/pl/<int:sid>')
