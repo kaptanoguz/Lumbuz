@@ -2,6 +2,23 @@
 
 ![Lumbuz ana sayfa](https://raw.githubusercontent.com/kaptanoguz/Lumbuz/__VERSION__/docs/screenshots/home.jpg)
 
+## __VERSION__'da yeni
+
+- 📡 **Kendi IPTV listeniz:** Canlı TV sekmesine M3U linki ya da Xtream Codes bilgileriyle kendi IPTV listenizi ekleyin. Liste sunucuda tutulur, gruplara ayrılır ve aranabilir; binlerce kanal olsa da TV yavaşlamaz. Bir listeyi "tüm cihazlarda göster" ile telefondan ekleyip TV'de izleyebilirsiniz.
+- 🧹 **Bozuk kanalları bulma:** "Tüm kanalları kontrol et" düğmesi kanalları arka planda tek tek dener (ağı yormadan) ve artık yayın yapmayanları gizler. Gizlenen kanallar 7 gün sonra yeniden denenir; "Bozukları göster" ile hepsini görüp geri getirebilirsiniz.
+- 📱 **Telefonda Lumbuz simgesi:** Tarayıcıdan "Ana ekrana ekle" dediğinizde artık Lumbuz adı ve simgesi görünür.
+- 🗑️ Eski v2.0 Windows derleme dosyaları kaldırıldı.
+
+<details>
+<summary>🇬🇧 What's new in __VERSION__</summary>
+
+- 📡 **Your own IPTV list:** add an M3U link or Xtream Codes login in the Live TV tab. The server keeps the list, splits it into groups and makes it searchable, so even thousands of channels don't slow the TV down. Share a list with "show on all devices" to add it from your phone and watch it on the TV.
+- 🧹 **Find broken channels:** "Check all channels" tries each channel quietly in the background and hides the ones that are gone. Hidden channels get another try after 7 days, and "Show broken" lets you see and bring them back.
+- 📱 **Lumbuz icon on phones:** "Add to Home screen" now shows the Lumbuz name and icon.
+- 🗑️ Old v2.0 Windows build files removed.
+
+</details>
+
 ## İndir
 
 | Sistem | Dosya | Not |
@@ -53,7 +70,7 @@ TMDb anahtarınızı `secrets.json` dosyasına bu klasörde ekleyebilirsiniz (ö
 - ▶️ Tarayıcının açamadığı dosyalar (mkv, avi, ts) canlı dönüştürülür; ses dili seçimi
 - 💬 Altyazı: yerel dosyalar, mkv içindeki altyazılar ve otomatik Türkçe altyazı
 - 🌐 **Online** sekmesi: kütüphanenizde olmayan filmleri ve dizileri izleyin
-- 📡 **Canlı TV**: yayıncıların kendi sitelerinden 60'tan fazla ücretsiz kanal
+- 📡 **Canlı TV**: yayıncıların kendi sitelerinden 60'tan fazla ücretsiz kanal, ayrıca kendi IPTV listeniz (M3U ya da Xtream Codes)
 - 🎵 **Klipler**: müzik klibi klasörünüzden sanatçı sayfaları ve arka arkaya oynatma
 - 🧸 **Kids Zone**: sadece çizgi filmler, animasyonlar ve aile filmleri
 - 📱 Kaldığınız yer sunucuda saklanır, telefonda durdurduğunuz filme bilgisayarda devam edersiniz
