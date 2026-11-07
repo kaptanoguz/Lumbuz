@@ -207,6 +207,12 @@ const EN = {
     'This IPTV stream is unencrypted (http), so it does not open on a secure (https) address; open Lumbuz from its home network address. ',
   'IPTV sağlayıcınız yayını vermedi: abonelik süresi ya da aynı anda bağlantı sınırı dolmuş olabilir. ':
     'Your IPTV provider did not send the stream: the subscription may have expired or its connection limit may be reached. ',
+  'BOZUK': 'BROKEN', 'Kontrol ediliyor: {d}/{t} · {n} bozuk': 'Checking: {d}/{t} · {n} broken', 'Durdur': 'Stop',
+  '“{g}” kanallarını kontrol et': 'Check “{g}” channels', 'Tüm kanalları kontrol et': 'Check all channels',
+  '{n} bozuk kanal gizli': '{n} broken channel hidden|{n} broken channels hidden', 'Bozukları gizle': 'Hide broken',
+  'Bozukları göster': 'Show broken', 'Hepsini geri getir': 'Bring all back',
+  'Kontrol bitti: {n} bozuk kanal gizlendi': 'Check finished: {n} broken channel hidden|Check finished: {n} broken channels hidden',
+  'Gizlenen kanallar geri getirildi': 'Hidden channels are back',
   // messages from the server (iptv.py)
   'Bağlantı http:// ya da https:// ile başlamalı.': 'The link must start with http:// or https://.',
   'Bu adres kullanılamaz.': 'This address cannot be used.', 'Sunucu bulunamadı. Adresi kontrol edin.': 'Server not found. Check the address.',

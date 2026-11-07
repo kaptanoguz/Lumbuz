@@ -2235,7 +2235,7 @@ const LV = { data: null, loading: false, error: false, cat: '', q: '', open: fal
   // lists, pool = every IPTV channel seen so far by id, ipGroups = each list's groups, ipg/ipq = the page's group
   // ('' or 'g:<name>') and search, ipItems = the channels on the page, ipRows = the player's list.
   src: store.get('live_src', ''), srcs: null, pool: new Map(), ipGroups: {}, ipg: '', ipq: '', ipItems: [], ipTotal: 0,
-  ipSeq: 0, ipRows: [], ipRowSeq: 0 };
+  ipSeq: 0, ipRows: [], ipRowSeq: 0, ipDead: false, ckT: 0 };
 const LIVE_CAT = id => tx(LV.data?.cats.find(c => c.id === id)?.n || '');
 const liveCat = ch => (ch.src ? ch.cat || T('Diğer') : LIVE_CAT(ch.cat));
 const liveFind = id => LV.pool.get(id) || LV.data?.channels.find(c => c.id === id);
@@ -2266,7 +2266,7 @@ function liveCard(ch) {
   const watching = LV.open && LV.cur?.id === ch.id;
   return `<button class="lv-card" data-live="${esc(ch.id)}"><span class="lv-no">${ch.no}</span>
     <span class="lv-name">${esc(ch.n)}</span><span class="lv-meta">${esc(liveCat(ch))}${ch.tr ? ' · ' + T('Türkiye') : ''}</span>
-    ${liveLogo(ch)}<span class="lv-badges"><span class="lv-pill">${T(watching ? 'İZLENİYOR' : 'CANLI')}</span>${ch.q ? `<span class="lv-q">${esc(ch.q)}</span>` : ''}</span></button>`;
+    ${liveLogo(ch)}<span class="lv-badges"><span class="lv-pill${ch.dead && !watching ? ' off' : ''}">${T(watching ? 'İZLENİYOR' : ch.dead ? 'BOZUK' : 'CANLI')}</span>${ch.q ? `<span class="lv-q">${esc(ch.q)}</span>` : ''}</span></button>`;
 }
 
 async function renderLive() {
@@ -2328,7 +2328,7 @@ function setLiveSource(id) {
   if (LV.src === id) return;
   LV.src = id;
   store.set('live_src', id);
-  LV.ipg = ''; LV.ipq = ''; LV.ipItems = []; LV.ipTotal = 0;
+  LV.ipg = ''; LV.ipq = ''; LV.ipItems = []; LV.ipTotal = 0; LV.ipDead = false;
   renderLive().then(() => $(`#lv-srcs [data-lsrc="${id}"]`)?.focus());
 }
 
@@ -2340,6 +2340,7 @@ function ipCh(sid, it) {
   let ch = LV.pool.get(id);
   if (!ch) LV.pool.set(id, ch = { id, n: it.n, cat: it.g || '', no: it.no, q: '', logo: it.logo || '', url: it.url, src: sid });
   ch.no = it.no;
+  ch.dead = !!it.dead;
   return ch;
 }
 
@@ -2361,12 +2362,47 @@ function iptvInfo(src) {
   return `<span class="ip-meta">${esc(parts.join(' · '))}</span>${src.error ? `<span class="ip-warn">${esc(tx(src.error))}</span>` : ''}`;
 }
 
+// The broken-channel tools under the list's info: check the channels (the open group, or all), the progress of a
+// running check, and the channels hidden as broken (show them, or bring them all back).
+function iptvCheckBar(src) {
+  const ck = src.checking || {};
+  const g = LV.ipg ? LV.ipg.slice(2) || T('Diğer') : '';
+  const run = ck.running
+    ? `<span class="ip-check-run"><span class="spin"></span>${T('Kontrol ediliyor: {d}/{t} · {n} bozuk', { d: ck.done, t: ck.total, n: ck.dead })}</span>
+       <button class="btn btn-ghost btn-sm" data-action="iptv-check-stop">${icon('x')}${T('Durdur')}</button>`
+    : `<button class="btn btn-ghost btn-sm" data-action="iptv-check">${icon('check')}${g ? T('“{g}” kanallarını kontrol et', { g: esc(g) }) : T('Tüm kanalları kontrol et')}</button>`;
+  const dead = src.dead ? `<span class="ip-meta">${T('{n} bozuk kanal gizli', { n: src.dead })}</span>
+    <button class="btn btn-ghost btn-sm" data-action="iptv-dead-toggle">${T(LV.ipDead ? 'Bozukları gizle' : 'Bozukları göster')}</button>
+    <button class="btn btn-ghost btn-sm" data-action="iptv-dead-clear">${icon('refresh')}${T('Hepsini geri getir')}</button>` : '';
+  return `<div class="ip-bar" id="ip-check">${run}${dead}</div>`;
+}
+
+// While a check runs, its progress is read every few seconds; the page is redrawn when it ends.
+function watchIptvCheck(src) {
+  clearTimeout(LV.ckT);
+  if (!src.checking?.running) return;
+  LV.ckT = setTimeout(async () => {
+    if (S.view !== 'live' || LV.src !== src.id) return;
+    try { src.checking = await api.get(`/api/iptv/${src.id}/check`); } catch { return; }
+    if (src.checking.running) {
+      const box = $('#ip-check');
+      if (box) box.outerHTML = iptvCheckBar(src);
+      return watchIptvCheck(src);
+    }
+    await loadIptvSources();
+    delete LV.ipGroups[src.id];
+    const s = LV.srcs.find(x => x.id === src.id);
+    toast(T('Kontrol bitti: {n} bozuk kanal gizlendi', { n: src.checking.dead }), 3000);
+    if (s && S.view === 'live' && LV.src === s.id) renderIptv(s);
+  }, 3000);
+}
+
 async function renderIptv(src) {
   const view = $('#view'), sid = src.id;
   const head = `<div class="page-head"><h1>${T('Canlı TV')}</h1><span class="count"><span class="lv-dot"></span>${T('{n} kanal', { n: src.count })}</span></div>`;
   if (!LV.ipGroups[sid]) {
     view.innerHTML = head + liveSourceBar() + `<div style="height:40vh;display:grid;place-items:center"><div class="spin" style="width:40px;height:40px;border-width:3px"></div></div>`;
-    try { LV.ipGroups[sid] = await api.get(`/api/iptv/${sid}/groups`); }
+    try { LV.ipGroups[sid] = await api.get(`/api/iptv/${sid}/groups${LV.ipDead ? '?dead=1' : ''}`); }
     catch {
       if (S.view === 'live' && LV.src === sid) view.innerHTML = head + liveSourceBar() + `<div class="grid">${emptyState('Kanal listesi alınamadı', 'Lumbuz sunucusuna ulaşılamıyor.', 'live')}</div>`;
       return;
@@ -2380,6 +2416,7 @@ async function renderIptv(src) {
     <div class="ip-bar">${iptvInfo(src)}
       <button class="btn btn-ghost btn-sm" data-action="iptv-refresh">${icon('refresh')}${T('Yenile')}</button>
       <button class="btn btn-ghost btn-sm" data-action="iptv-edit">${icon('settings')}${T('Düzenle')}</button></div>
+    ${iptvCheckBar(src)}
     <div class="lv-tools">
       ${groups.length > 1 ? `<div class="chips" id="lv-chips"><button class="chip${LV.ipg ? '' : ' on'}" data-ipg="">${T('Tümü')}<span class="n">${src.count}</span></button>${groups
         .map(g => `<button class="chip${LV.ipg === 'g:' + g.n ? ' on' : ''}" data-ipg="g:${esc(g.n)}">${esc(g.n || T('Diğer'))}<span class="n">${g.c}</span></button>`).join('')}</div>` : ''}
@@ -2392,6 +2429,7 @@ async function renderIptv(src) {
   let t = 0;
   inp.addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => { LV.ipq = inp.value; loadIptvPage(true); }, 300); });
   loadIptvPage(true);
+  watchIptvCheck(src);
 }
 
 async function loadIptvPage(reset) {
@@ -2403,7 +2441,7 @@ async function loadIptvPage(reset) {
   }
   const g = LV.ipg ? '&g=' + encodeURIComponent(LV.ipg.slice(2)) : '';
   let d = null;
-  try { d = await api.get(`/api/iptv/${sid}/channels?off=${LV.ipItems.length}&q=${encodeURIComponent(LV.ipq)}${g}`); } catch {}
+  try { d = await api.get(`/api/iptv/${sid}/channels?off=${LV.ipItems.length}&q=${encodeURIComponent(LV.ipq)}${g}${LV.ipDead ? '&dead=1' : ''}`); } catch {}
   if (seq !== LV.ipSeq || S.view !== 'live' || LV.src !== sid || !$('#lv-grid')) return;
   if (!d) { grid.innerHTML = emptyState('Kanal listesi alınamadı', 'Lumbuz sunucusuna ulaşılamıyor.', 'live'); return; }
   const before = LV.ipItems.length;
@@ -2509,6 +2547,29 @@ async function iptvAction(a, btn) {
   if (a === 'iptv-add') return openIptvForm(null);
   if (a === 'iptv-edit') return cur && openIptvForm(cur);
   if (a === 'iptv-more') return loadIptvPage(false);
+  if (a === 'iptv-check' && cur) {
+    try { cur.checking = await api.post(`/api/iptv/${cur.id}/check`, LV.ipg ? { g: LV.ipg.slice(2) } : {}); } catch { return; }
+    const box = $('#ip-check');
+    if (box) box.outerHTML = iptvCheckBar(cur);
+    $('#ip-check [data-action="iptv-check-stop"]')?.focus();
+    return watchIptvCheck(cur);
+  }
+  if (a === 'iptv-check-stop' && cur) {
+    await fetch(`/api/iptv/${cur.id}/check`, { method: 'DELETE' }).catch(() => {});
+    return;
+  }
+  if (a === 'iptv-dead-toggle' && cur) {
+    LV.ipDead = !LV.ipDead;
+    delete LV.ipGroups[cur.id];
+    return renderLive();
+  }
+  if (a === 'iptv-dead-clear' && cur) {
+    await fetch(`/api/iptv/${cur.id}/dead`, { method: 'DELETE' }).catch(() => {});
+    cur.dead = 0; LV.ipDead = false;
+    delete LV.ipGroups[cur.id];
+    toast(T('Gizlenen kanallar geri getirildi'));
+    return renderLive();
+  }
   if (a === 'iptv-refresh') {
     if (!cur || btn.disabled) return;
     btn.disabled = true;
@@ -2824,6 +2885,9 @@ function liveFailed(ch, code) {
   err.hidden = false;
   if (!LV.list) openLiveList();
   if (!ch.src) api.post('/api/live/fail', { id: ch.id, code }).catch(() => {});
+  // The server tries the channel once itself and hides it only when it is really gone (not on an https page,
+  // where the browser itself refuses http streams).
+  else if (!(location.protocol === 'https:' && /^http:/i.test(ch.url))) api.post(`/api/iptv/${ch.src}/fail`, { url: ch.url }).catch(() => {});
 }
 
 function zapLive(dir) {

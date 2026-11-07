@@ -867,6 +867,10 @@ main { min-height: 100vh; }
 .ip-bar > * { margin: 4px 12px 4px 0; }
 .ip-bar .btn .icon, .ip-actions .btn .icon { width: 18px; height: 18px; }
 .ip-warn { color: #fca5a5; }
+.ip-check-run { display: inline-flex; align-items: center; color: #e4e4e7; font-weight: 600; }
+.ip-check-run .spin { margin-right: 10px; }
+.lv-pill.off { background: #3f3f46; color: #d4d4d8; }
+.lv-pill.off::before { background: #a1a1aa; }
 .ip-more { text-align: center; padding: 0 var(--gutter) 90px; margin-top: -60px; }
 .lv-grid + .ip-more:empty { display: none; }
 .ip-sheet { max-width: 620px; }
