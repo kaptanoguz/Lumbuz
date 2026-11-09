@@ -111,7 +111,9 @@ def parse_season_episode(rel_path):
         if m:
             season, episode = int(m.group(1)), int(m.group(2))
         else:
-            m = (re.search(r'(\d+)\s*\.?\s*[Bb]ölüm', filename, re.I) or re.search(r'[Bb]ölüm\s*(\d+)', filename, re.I) or
+            ep_word = r'(?:b[oö]l[uü]m|b[oö]lm|blm|bö)'  # "Bölüm", "Bolum", "Bölm", "Blm", "BÖ"
+            m = (re.search(r'(\d+)\s*\.?\s*' + ep_word + r'(?![a-zçğıöşü])', filename, re.I) or
+                 re.search(r'\b' + ep_word + r'\s*\.?\s*(\d+)', filename, re.I) or
                  re.search(r'[Ee]pisode\s*(\d+)', filename, re.I) or re.search(r'[Ee](\d+)', filename, re.I))
             if m:
                 episode = int(m.group(1))
