@@ -55,9 +55,19 @@ def _low_priority():
         pass
 
 
+def _centre(path, audio):
+    """True for 5.1/7.1 tracks: their dialogue sits in the centre channel, away from music and effects."""
+    from .media import probe
+    try:
+        tracks = probe(path)['audio']
+        return (tracks[audio] if audio < len(tracks) else tracks[0])['channels'] >= 6
+    except Exception:
+        return False
+
+
 def _speech_path(path, audio):
     st = os.stat(path)
-    key = hashlib.sha1(f"{path}|{st.st_size}|{st.st_mtime}|{audio}".encode()).hexdigest()
+    key = hashlib.sha1(f"{path}|{st.st_size}|{st.st_mtime}|{audio}|{'fc' if _centre(path, audio) else 'mix'}".encode()).hexdigest()
     return os.path.join(SUBS_DIR, f'speech-{key}.f32')
 
 
@@ -73,7 +83,8 @@ def speech_track(path, audio=0):
     cmd = ['ffmpeg', '-hide_banner', '-nostdin', '-loglevel', 'error', '-threads', '1',
            '-i', ('concat:' + '|'.join(parts)) if parts else path, '-map', f'0:a:{audio}?', '-vn', '-sn',
            # mono, voice band only, squared and averaged down to RATE values a second
-           '-af', f'aformat=channel_layouts=mono,aresample=8000,highpass=f=300,lowpass=f=3000,'
+           '-af', ('pan=mono|c0=FC,' if _centre(path, audio) else 'aformat=channel_layouts=mono,') +
+                  f'aresample=8000,highpass=f=300,lowpass=f=3000,'
                   f'aeval=val(0)*val(0),aresample={RATE}',
            '-f', 'f32le', 'pipe:1']
     kw = {'preexec_fn': _low_priority} if os.name == 'posix' else {'creationflags': 0x00004000}  # BELOW_NORMAL
