@@ -787,6 +787,7 @@ const ST_PANELS = {
     ${stSwitch('data-st="sub-box"', boxed, T('Arka plan'), T('Yazının arkasını koyulaştırır, açık sahnelerde okumayı kolaylaştırır.'), 'cc')}
     ${stGroup(T('Seçim'))}
     ${stSwitch('data-st="sub-auto"', auto, T('Türkçe altyazıyı kendiliğinden aç'), T('Video Türkçe konuşmuyorsa önce dosyadaki, yoksa internetteki Türkçe altyazı açılır.'), 'globe')}
+    ${stSwitch('data-st="sub-align"', store.get('subAlign', true), T('Altyazıyı sese göre hizala'), T('İnternetten gelen ya da yüklenen altyazı filmin sesiyle karşılaştırılır ve kayıksa kendiliğinden düzeltilir.'), 'cc')}
     ${stHint(T('Oynatıcıda altyazıyı kapatırsanız bu ayar da kapanır. Altyazı ayarları yalnızca bu cihazda geçerlidir.'))}`;
   },
 
@@ -842,6 +843,7 @@ async function stAction(a) {
     applySubStyle();
   } else if (a === 'sub-box') { store.set('subBox', !store.get('subBox', false)); applySubStyle(); }
   else if (a === 'sub-auto') store.set('subsOff', !store.get('subsOff', false));
+  else if (a === 'sub-align') store.set('subAlign', !store.get('subAlign', true));
   else if (a === 'rand-min') {
     const i = RAND_MIN.findIndex(x => x[0] === randPrefs().min);
     store.set('randMin', RAND_MIN[(i + 1) % RAND_MIN.length][0]);
@@ -1377,11 +1379,43 @@ function parseSubs(text) {
 function setSubs(text, label, source) {
   const cues = parseSubs(text || '');
   if (!cues.length) { toast(T('Altyazı dosyası okunamadı')); return false; }
-  P.subs = { cues, label, source };
+  P.subs = { cues, label, source, text, align: '' };
   P.lastSubHTML = null;
   toast(`${icon('cc')} ${T('Altyazı')}: <b>${esc(tx(label))}</b>`);
   if ($('#p-panel').classList.contains('open')) renderPanel();
+  // Subtitles from the internet or from a file are often made for another release of the film; line them up with
+  // the sound. Embedded tracks come with the video itself and are already in sync.
+  if (!source.startsWith('emb') && store.get('subAlign', true)) alignSubs(false);
   return true;
+}
+// The server compares the subtitle with where people talk in the film and answers with a shift (and, for a copy at
+// another frame rate, a stretch). The first subtitle for a video takes about a minute, later ones a few seconds.
+async function alignSubs(manual) {
+  const subs = P.subs, k = P.kind, id = P.id;
+  if (!subs || subs.align === 'working' || P.kind === 'v') return;
+  const same = () => P.subs === subs && P.kind === k && P.id === id && P.open;
+  const done = (state, msg) => { subs.align = state; if (msg && (manual || state === 'done')) toast(msg, 3500); if ($('#p-panel').classList.contains('open') && same()) renderPanel(); };
+  subs.align = 'working';
+  if (manual) toast(T('Altyazı filmin sesine göre hizalanıyor…'), 3000);
+  if ($('#p-panel').classList.contains('open')) renderPanel();
+  let r;
+  try {
+    r = await api.post(`/api/subs/align/${k}/${id}?a=${P.audio}`, { text: subs.text });
+    for (let i = 0; r.state === 'working' && i < 200; i++) {
+      await new Promise(res => setTimeout(res, 3000));
+      if (!same()) return;
+      r = await api.get(`/api/subs/align/status/${r.key}`);
+    }
+  } catch (e) { r = { state: 'failed' }; }
+  if (!same()) return;
+  if (r.state !== 'done' || !r.ok) return done('unsure', T('Altyazı sesle eşleştirilemedi. Senkronu elle ayarlayabilirsiniz.'));
+  const ratio = +r.ratio || 1, off = +r.offset || 0;
+  if (ratio === 1 && Math.abs(off) < 0.3) return done('done', manual ? T('Altyazı zaten filmle uyumlu') : '');
+  subs.cues = subs.cues.map(c => ({ s: c.s * ratio + off, e: c.e * ratio + off, h: c.h }));
+  P.subDelay = 0;
+  P.lastSubHTML = null;
+  const dec = n => LANG === 'en' ? n : n.replace('.', ',');
+  done('done', T('Altyazı sese göre hizalandı ({v} sn)', { v: (off > 0 ? '+' : '') + dec(off.toFixed(1)) }));
 }
 function renderSubtitle(t) {
   const el = $('#p-subs');
@@ -1465,6 +1499,7 @@ function renderPanel(view = 'main') {
       <span>${T('Boyut')}</span><div class="seg">${[['s', 'Küçük'], ['m', 'Orta'], ['l', 'Büyük']].map(([k, l]) => `<button class="${size === k ? 'on' : ''}" data-p="sub-size" data-v="${k}">${T(l)}</button>`).join('')}</div>
       <span>${T('Senkron')}</span><div class="seg"><button data-p="sub-delay" data-v="-0.5">${dec('−0.5')}</button><button class="on" style="min-width:58px">${T('{v} sn', { v: (P.subDelay > 0 ? '+' : '') + dec(P.subDelay.toFixed(1)) })}</button><button data-p="sub-delay" data-v="0.5">${dec('+0.5')}</button></div>
       <div class="seg"><button class="${store.get('subBox', false) ? 'on' : ''}" data-p="sub-box">${T('Arka plan')}</button></div>
+      ${P.subs ? `<div class="seg"><button class="${P.subs.align === 'done' ? 'on' : ''}" data-p="sub-align"${P.subs.align === 'working' ? ' disabled' : ''}>${T(P.subs.align === 'working' ? 'Hizalanıyor…' : P.subs.align === 'done' ? 'Sese göre hizalandı' : 'Sese göre hizala')}</button></div>` : ''}
     </div>`;
 }
 function applySubStyle() {
@@ -1526,6 +1561,7 @@ async function playerAction(a, el) {
     }
     case 'sub-size': store.set('subSize', el.dataset.v); applySubStyle(); return renderPanel();
     case 'sub-box': store.set('subBox', !store.get('subBox', false)); applySubStyle(); return renderPanel();
+    case 'sub-align': if (P.subs) { P.subs.align = ''; alignSubs(true); } return;
     case 'sub-delay': P.subDelay = Math.round((P.subDelay + parseFloat(el.dataset.v)) * 10) / 10; P.lastSubHTML = null; return renderPanel();
   }
 }
