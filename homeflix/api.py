@@ -12,7 +12,7 @@ from urllib.parse import quote
 
 from flask import Flask, Response, abort, g, jsonify, render_template, request, send_file
 
-from . import clipmeta, clips, downloads, iptv, library, livetv, media, metadata, online, state, subtitles
+from . import clipmeta, clips, downloads, iptv, library, livetv, media, metadata, online, state, subsync, subtitles
 from .config import BASE_DIR, ONLINE_EMBED, POSTERS_DIR
 from .db import LOCAL_VIEWER, library_dirs, load_settings, save_settings, session
 from .names import EXTRA_BASE, extra_title, fold, sequel_key
@@ -731,6 +731,23 @@ def sub_auto(kind, iid):
     if not found:
         return '', 204
     return app.response_class(found[0], mimetype='text/vtt')
+
+
+# Lines a subtitle up with the film's sound (see subsync.py). The first subtitle for a video takes about a minute,
+# so this only starts the job; the player asks for the result every few seconds.
+@app.route('/api/subs/align/<kind>/<int:iid>', methods=['POST'])
+def subs_align(kind, iid):
+    path = media_path(kind, iid)
+    text = (request.get_json(force=True, silent=True) or {}).get('text') or ''
+    if len(text) > 2_000_000:
+        abort(413)
+    key, st = subsync.request(path, max(0, request.args.get('a', 0, type=int)), text)
+    return jsonify({'key': key, **st})
+
+
+@app.route('/api/subs/align/status/<key>')
+def subs_align_status(key):
+    return jsonify(subsync.status(key))
 
 
 @app.route('/api/subs/download', methods=['POST'])
