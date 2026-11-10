@@ -50,6 +50,10 @@ CREATE TABLE IF NOT EXISTS clip_artists (key TEXT PRIMARY KEY, name TEXT, deezer
 CREATE TABLE IF NOT EXISTS iptv_sources (id INTEGER PRIMARY KEY AUTOINCREMENT, viewer TEXT NOT NULL, name TEXT,
     kind TEXT, url TEXT, username TEXT, password TEXT, shared INTEGER DEFAULT 0, added_at REAL, updated_at REAL,
     count INTEGER DEFAULT 0, info TEXT, error TEXT);
+-- Devices that use this server (the viewer cookie), for Settings › Connected devices on the server computer. name is
+-- what the server owner called it; empty = a name guessed from the browser. last_seen is updated at most once a minute.
+CREATE TABLE IF NOT EXISTS devices (viewer TEXT PRIMARY KEY, name TEXT DEFAULT '', ua TEXT, ip TEXT, first_seen REAL,
+    last_seen REAL);
 CREATE INDEX IF NOT EXISTS idx_episodes_series ON episodes(series_id, season, episode);
 """
 

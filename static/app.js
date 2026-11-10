@@ -485,13 +485,15 @@ function downloadButton(ref, size) {
   if (!CAN_DOWNLOAD) return '';
   return `<button class="round-btn" data-dl="${ref}" title="${T('İndir')}${size ? ' · ' + fmtSize(size) : ''}" aria-label="${T('İndir')}">${icon('download')}</button>`;
 }
-// One download at a time per device: the server refuses a second one, so check first and say why.
+// A few downloads at a time per device (set on the server): the server refuses one more, so check first and say why.
 async function startDownload(ref) {
   const [kind, id] = ref.split(':');
   let st;
   try { st = await api.get('/api/download/status'); } catch { return toast(T('Sunucuya ulaşılamadı.')); }
-  if (st.mine) {
+  // Older servers send only "mine"; newer ones also say how many more this device may start ("free").
+  if (st.mine && !(st.free > 0)) {
     const pct = st.mine.size ? Math.floor(st.mine.sent / st.mine.size * 100) : 0;
+    if ((st.per_device || 1) > 1) return toast(`${icon('download')} ${T('Bu cihazda zaten {n} indirme sürüyor. Biri bitince yenisini başlatabilirsiniz.', { n: st.per_device })}`, 4500);
     return toast(`${icon('download')} ${T('Bu cihazda zaten bir indirme sürüyor: <b>{name}</b> (%{pct}). O bitince yenisini başlatabilirsiniz.', { name: esc(st.mine.name), pct })}`, 4500);
   }
   const a = document.createElement('a');
@@ -660,6 +662,7 @@ function stCats() {
     ['subs', 'cc', 'Altyazı', 'Altyazının görünüşü ve kendiliğinden açılması.'],
     ['random', 'shuffle', 'Rastgele film', 'Rastgele film düğmesinin hangi filmlerden seçeceği.'],
     ST.s.local && ['downloads', 'download', 'İndirmeler', 'Kütüphane dosyaları indirilirken ağın ne kadarının kullanılacağı.'],
+    ST.s.local && ['clients', 'monitor', 'Bağlı cihazlar', 'Bu sunucuyu kullanan cihazlar, adları ve şu an indirdikleri.'],
     ['devices', 'wifi', 'Diğer cihazlar', 'Telefon, tablet ve TV’den Lumbuz’a bağlanın.'],
     ['lang', 'lang', 'Dil · Language', 'Menülerin ve düğmelerin dili.'],
     ['keys', 'keyboard', 'Klavye kısayolları', 'Bilgisayarda klavyeyle hızlı kullanım.'],
@@ -806,8 +809,15 @@ const ST_PANELS = {
 
   downloads: s => `
     ${stCycle('data-st="dl-limit"', T('Hız sınırı'), T('{v} Mbit/sn', { v: s.download_mbps }), 'gauge', T('Bütün indirmeler birlikte'))}
-    <div class="st-tiles">${stTile(T('Aynı anda'), T('Cihaz başına 1 dosya'))}${stTile(T('Televizyonlar'), T('İndirme düğmesi gizli'))}</div>
-    ${stHint(T('Bütün indirmeler birlikte bu hızı geçmez. Her cihaz aynı anda yalnızca bir dosya indirebilir.'))}`,
+    ${stCycle('data-st="dl-per"', T('Aynı anda'), T('Cihaz başına {n} dosya', { n: s.download_per_device }), 'stack', T('Bir cihazın aynı anda indirebileceği dosya sayısı'))}
+    <div class="st-tiles one">${stTile(T('Televizyonlar'), T('İndirme düğmesi gizli'))}</div>
+    ${stHint(T('Bütün indirmeler birlikte bu hızı geçmez. Bir cihaz aynı anda en fazla bu kadar dosya indirebilir; sayı artınca her indirme hızın daha küçük bir payını alır.'))}`,
+
+  clients: () => {
+    CL_DEV.edit = '';
+    setTimeout(loadClients, 0);
+    return `<div id="st-clients">${CL_DEV.list ? clientsHtml() : '<div class="st-wait"><div class="spin"></div></div>'}</div>`;
+  },
 
   devices: s => {
     const urls = s.urls.length ? s.urls : [location.origin];
@@ -850,6 +860,11 @@ async function stAction(a) {
   } else if (a === 'dl-limit') {
     const v = DL_LIMITS[(DL_LIMITS.indexOf(ST.s.download_mbps) + 1) % DL_LIMITS.length];
     if (!await setDownloadLimit(v)) return;
+  } else if (a === 'dl-per') {
+    const v = DL_PER[(DL_PER.indexOf(ST.s.download_per_device) + 1) % DL_PER.length];
+    try { await api.post('/api/settings', { download_per_device: v }); } catch { toast(T('Kaydedilemedi')); return; }
+    ST.s.download_per_device = v;
+    toast(T('Cihaz başına aynı anda {n} indirme', { n: v }));
   }
   renderStPanel(`[data-st="${a}"]`);
 }
@@ -921,6 +936,97 @@ function setLang(v) {
 
 // Speed limit shared by all downloads together, so people watching are never slowed down. Set from this computer only.
 const DL_LIMITS = [10, 20, 40, 80, 200];
+const DL_PER = [1, 2, 3, 5];
+
+// Settings › Connected devices (server computer only): every device that used Lumbuz lately, by its viewer cookie.
+// A device can be given a name; without one it is named after its browser ("Android phone", "LG TV"...). The list
+// refreshes every few seconds while it is open, so downloads move along.
+const CL_DEV = { list: null, edit: '', timer: 0 };
+function guessDevice(ua) {
+  const u = ua || '';
+  if (/Web0S|webOS|NetCast/i.test(u)) return ['LG TV', 'tv'];
+  if (/Tizen|SmartTV|SMART-TV/i.test(u)) return ['Akıllı TV', 'tv'];
+  if (/HomeflixTV|Android TV|AFT|BRAVIA|GoogleTV/i.test(u)) return ['Android TV', 'tv'];
+  if (/iPad/i.test(u)) return ['iPad', 'phone'];
+  if (/iPhone/i.test(u)) return ['iPhone', 'phone'];
+  if (/Android/i.test(u)) return [/Mobile/i.test(u) ? 'Android telefon' : 'Android tablet', 'phone'];
+  if (/Windows/i.test(u)) return ['Windows bilgisayar', 'monitor'];
+  if (/Macintosh|Mac OS X/i.test(u)) return ['Mac', 'monitor'];
+  if (/Linux|CrOS/i.test(u)) return ['Linux bilgisayar', 'monitor'];
+  return ['Bilinmeyen cihaz', 'monitor'];
+}
+function agoText(sec) {
+  if (sec < 300) return T('Şu an bağlı');
+  if (sec < 3600) return T('{n} dk önce', { n: Math.floor(sec / 60) });
+  if (sec < 86400) return T('{n} sa önce', { n: Math.floor(sec / 3600) });
+  return T('{n} gün önce', { n: Math.floor(sec / 86400) });
+}
+const devName = d => d.name ? esc(d.name) : T(guessDevice(d.ua)[0]);
+const dlLine = x => `${esc(x.name)} · %${x.size ? Math.floor(x.sent / x.size * 100) : 0}${x.size ? ' / ' + fmtSize(x.size) : ''}`;
+function clientsHtml() {
+  const list = CL_DEV.list || [];
+  const online = list.filter(d => d.ago < 300).length, dls = list.flatMap(d => d.downloads.map(x => [d, x]));
+  const ed = CL_DEV.edit && list.find(d => d.id === CL_DEV.edit);
+  if (ed) {
+    const [guess, ic] = guessDevice(ed.ua);
+    return `${stGroup(T('Cihaza ad verin'))}
+      <label class="st-field"><small>${T(guess)}${ed.ip ? ' · ' + esc(ed.ip) : ''}</small><input id="dev-name" value="${esc(ed.name)}" maxlength="40" placeholder="${T('Örn. Kamara 12 laptop')}" spellcheck="false"></label>
+      ${stRow({ ic: 'check', title: T('Kaydet'), attrs: 'data-dev-save' })}
+      ${stRow({ ic: 'x', title: T('Vazgeç'), attrs: 'data-dev-cancel' })}
+      ${stRow({ ic, title: T('Bu cihazı listeden kaldır'), sub: T('Lumbuz’u tekrar açarsa listeye geri gelir.'), attrs: 'data-dev-forget' })}
+      ${stHint(T('Adı boş bırakırsanız tarayıcısından tahmin edilen ad kullanılır.'))}`;
+  }
+  return `<div class="st-tiles">${stTile(T('Şu an bağlı'), online)}${stTile(T('İndiren'), new Set(dls.map(([d]) => d.id)).size)}</div>
+    ${dls.length ? `${stGroup(T('Şu an indirenler'))}${dls.map(([d, x]) => stRow({ ic: 'download', title: devName(d), sub: dlLine(x), attrs: `data-dev="${esc(d.id)}"`, end: icon('right', 'st-end') })).join('')}` : ''}
+    ${stGroup(T('Cihazlar'))}
+    ${list.length ? list.map(d => {
+      const sub = [agoText(d.ago), d.ip && esc(d.ip), d.downloads.length && T('{n} indirme', { n: d.downloads.length })].filter(Boolean).join(' · ');
+      return stRow({ ic: guessDevice(d.ua)[1], title: devName(d), sub, on: d.ago < 300, attrs: `data-dev="${esc(d.id)}" aria-label="${T('Ad ver')}: ${devName(d)}"`, end: icon('right', 'st-end') });
+    }).join('') : stHint(T('Henüz başka bir cihaz bağlanmadı.'))}
+    ${stHint(T('Bir cihaza dokunup ad verebilirsiniz. Adlar yalnızca bu bilgisayarda görünür. Bir cihazın tarayıcı verileri silinirse yeni bir cihaz olarak görünür.'))}`;
+}
+async function loadClients() {
+  clearTimeout(CL_DEV.timer);
+  const box = $('#st-clients');
+  if (!box) return;
+  try { CL_DEV.list = (await api.get('/api/devices')).devices; } catch { CL_DEV.list = CL_DEV.list || []; }
+  if (!$('#st-clients') || ST.cat !== 'clients') return;
+  if (!CL_DEV.edit) {
+    const a = document.activeElement, key = a?.dataset?.dev;
+    $('#st-clients').innerHTML = clientsHtml();
+    if (key) stFocus($(`#st-clients [data-dev="${CSS.escape(key)}"]`));
+  }
+  CL_DEV.timer = setTimeout(loadClients, 5000);
+}
+function devEdit(id) {
+  CL_DEV.edit = id;
+  $('#st-clients').innerHTML = clientsHtml();
+  const inp = $('#dev-name');
+  if (!inp) return;
+  inp.addEventListener('keydown', e => { if (e.key === 'Enter') devSave(); else if (e.key === 'Escape') { e.stopPropagation(); devDone(); } });
+  stFocus(inp);
+}
+function devDone(focusId) {
+  const id = focusId || CL_DEV.edit;
+  CL_DEV.edit = '';
+  $('#st-clients').innerHTML = clientsHtml();
+  stFocus($(`#st-clients [data-dev="${CSS.escape(id)}"]`) || $('#st-clients button'));
+}
+async function devSave() {
+  const id = CL_DEV.edit, name = $('#dev-name').value.trim();
+  try { await api.post(`/api/devices/${encodeURIComponent(id)}`, { name }); } catch { return toast(T('Kaydedilemedi')); }
+  const d = CL_DEV.list.find(x => x.id === id);
+  if (d) d.name = name;
+  devDone(id);
+}
+async function devForget() {
+  const id = CL_DEV.edit;
+  try { await fetch(`/api/devices/${encodeURIComponent(id)}`, { method: 'DELETE' }); } catch { return toast(T('Kaydedilemedi')); }
+  CL_DEV.list = CL_DEV.list.filter(x => x.id !== id);
+  CL_DEV.edit = '';
+  $('#st-clients').innerHTML = clientsHtml();
+  stFocus($('#st-clients button'));
+}
 async function setDownloadLimit(v) {
   try { await api.post('/api/settings', { download_mbps: v }); } catch { toast(T('Kaydedilemedi')); return false; }
   ST.s.download_mbps = v;
@@ -3116,6 +3222,11 @@ document.addEventListener('click', async e => {
   if (stc) { stShow(stc.dataset.stCat); return; }
   const st = t.closest('[data-st]');
   if (st) return stAction(st.dataset.st);
+  const dev = t.closest('[data-dev]');
+  if (dev) return devEdit(dev.dataset.dev);
+  if (t.closest('[data-dev-save]')) return devSave();
+  if (t.closest('[data-dev-cancel]')) return devDone();
+  if (t.closest('[data-dev-forget]')) return devForget();
   const dg = t.closest('[data-dir-go]');
   if (dg) return dirGo(dg.dataset.dirGo);
   const dad = t.closest('[data-dir-add]');
