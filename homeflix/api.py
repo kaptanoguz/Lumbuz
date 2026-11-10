@@ -23,6 +23,7 @@ app = Flask(__name__, template_folder=os.path.join(BASE_DIR, 'templates'),
 settings = load_settings()
 library.settings_ref = settings
 downloads.set_limit(settings.get('download_mbps', downloads.DEFAULT_MBPS))
+downloads.set_per_device(settings.get('download_per_device', downloads.DEFAULT_PER_DEVICE))
 
 
 VIEWER_COOKIE = 'hf_viewer'
@@ -69,9 +70,28 @@ def viewer():
     return g.viewer
 
 
+_seen = {}  # viewer -> (time written, ip, user agent): last_seen goes to the database at most once a minute
+
+
 @app.before_request
 def identify():
-    viewer()
+    vid = viewer()
+    # Remember the device for Settings › Connected devices. A request without the cookie yet (a first visit, or a player
+    # that sends no cookies) is skipped, so one-off visitors do not fill the list; the app's next call records it.
+    if vid == LOCAL_VIEWER or 'new_viewer' in g or not (request.path == '/' or request.path.startswith(('/api/', '/download/'))):
+        return
+    now, ip, ua = time.time(), request.remote_addr or '', request.headers.get('User-Agent', '')[:300]
+    last = _seen.get(vid)
+    if last and now - last[0] < 60 and last[1:] == (ip, ua):
+        return
+    _seen[vid] = (now, ip, ua)
+    try:
+        with session() as c:
+            c.execute("INSERT INTO devices (viewer, ua, ip, first_seen, last_seen) VALUES (?, ?, ?, ?, ?) "
+                      "ON CONFLICT(viewer) DO UPDATE SET ua = excluded.ua, ip = excluded.ip, last_seen = excluded.last_seen",
+                      (vid, ua, ip, now, now))
+    except Exception:
+        pass
 
 
 @app.after_request
@@ -609,9 +629,44 @@ def api_download_status():
     return jsonify(downloads.status(viewer()))
 
 
+@app.route('/api/devices')
+def api_devices():
+    """The devices that used this server in the last 90 days, with what each is downloading now. Server computer only."""
+    if not is_local_request():
+        abort(403)
+    now = time.time()
+    dls = {}
+    for d in downloads.active():
+        dls.setdefault(d['viewer'], []).append({k: d[k] for k in ('name', 'size', 'sent')})
+    with session() as c:
+        rows = c.execute("SELECT viewer, name, ua, ip, first_seen, last_seen FROM devices WHERE last_seen > ? "
+                         "ORDER BY last_seen DESC", (now - 90 * 86400,)).fetchall()
+    out = [{'id': r['viewer'], 'name': r['name'] or '', 'ua': r['ua'] or '', 'ip': r['ip'] or '',
+            'first_seen': r['first_seen'], 'ago': max(0, int(now - (r['last_seen'] or now))),
+            'downloads': dls.pop(r['viewer'], [])} for r in rows]
+    # A download from a device that is not in the list yet still shows up.
+    out += [{'id': v, 'name': '', 'ua': '', 'ip': '', 'first_seen': now, 'ago': 0, 'downloads': d} for v, d in dls.items()]
+    return jsonify({'devices': out})
+
+
+@app.route('/api/devices/<vid>', methods=['POST', 'DELETE'])
+def api_device(vid):
+    """Name a device (an empty name goes back to the guessed one), or forget it. Server computer only."""
+    if not is_local_request():
+        abort(403)
+    with session() as c:
+        if request.method == 'DELETE':
+            c.execute("DELETE FROM devices WHERE viewer = ?", (vid,))
+            _seen.pop(vid, None)
+        else:
+            name = str((request.get_json(force=True, silent=True) or {}).get('name', '')).strip()[:40]
+            c.execute("UPDATE devices SET name = ? WHERE viewer = ?", (name, vid))
+    return jsonify({'ok': True})
+
+
 @app.route('/download/<kind>/<int:iid>')
 def download(kind, iid):
-    """The original file as an attachment: one download at a time per device, throttled to the shared limit.
+    """The original file as an attachment: a set number of downloads at a time per device, throttled to the shared limit.
     Supports a single byte range so browsers can resume a broken download."""
     path = media_path(kind, iid)
     size = os.path.getsize(path)
@@ -628,7 +683,10 @@ def download(kind, iid):
             return Response(status=416, headers={'Content-Range': f'bytes */{size}'})
     token = downloads.claim(viewer(), name, size)
     if token is None:
-        return Response('Bu cihazda zaten bir indirme sürüyor. O bitince yenisini başlatabilirsiniz.', status=429,
+        n = downloads.per_device()
+        msg = ('Bu cihazda zaten bir indirme sürüyor. O bitince yenisini başlatabilirsiniz.' if n == 1 else
+               f'Bu cihazda zaten {n} indirme sürüyor. Biri bitince yenisini başlatabilirsiniz.')
+        return Response(msg, status=429,
                         mimetype='text/plain', headers={'Retry-After': '30'})
     length = end - start + 1
     ascii_name = name.encode('ascii', 'replace').decode().replace('?', '_').replace('"', '')
@@ -1104,6 +1162,8 @@ def api_settings():
                     values[f'{kind}_dir'] = dirs[0] if dirs else ''  # read by older versions
         if 'download_mbps' in d:
             values['download_mbps'] = str(downloads.set_limit(d['download_mbps']))
+        if 'download_per_device' in d:
+            values['download_per_device'] = str(downloads.set_per_device(d['download_per_device']))
         settings.update(values)
         save_settings(values)
     with session() as c:
@@ -1117,7 +1177,7 @@ def api_settings():
     private = {k: settings.get(k, '') if local else '' for k in ('movie_dir', 'series_dir', 'omdb_api_key')}
     for kind in ('movie', 'series', 'music'):
         private[f'{kind}_dirs'] = library_dirs(settings, kind) if local else []
-    return jsonify({**private, 'local': local, 'stats': stats, 'download_mbps': downloads.limit_mbps(), 'version': get_version(), 'urls': [f"http://{ip}:{PORT}" for ip in lan_ips()]})
+    return jsonify({**private, 'local': local, 'stats': stats, 'download_mbps': downloads.limit_mbps(), 'download_per_device': downloads.per_device(), 'version': get_version(), 'urls': [f"http://{ip}:{PORT}" for ip in lan_ips()]})
 
 
 def _browse_roots():

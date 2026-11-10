@@ -123,6 +123,21 @@ const EN = {
   'Cihaz başına 1 dosya': '1 file per device', 'Televizyonlar': 'TVs', 'İndirme düğmesi gizli': 'Download button hidden',
   'Bu adreslerden biri': 'One of these addresses', 'Uygulama': 'App', 'Lisans': 'License', 'Film bilgileri': 'Movie details',
   'Bu sunucu': 'This server',
+  'Cihaz başına {n} dosya': '{n} file(s) per device', 'Bir cihazın aynı anda indirebileceği dosya sayısı': 'How many files one device can download at once',
+  'Bütün indirmeler birlikte bu hızı geçmez. Bir cihaz aynı anda en fazla bu kadar dosya indirebilir; sayı artınca her indirme hızın daha küçük bir payını alır.':
+    'All downloads together stay under this speed. A device can download at most this many files at once; with more downloads, each gets a smaller share of the speed.',
+  'Cihaz başına aynı anda {n} indirme': '{n} download(s) at a time per device',
+  'Bu cihazda zaten {n} indirme sürüyor. Biri bitince yenisini başlatabilirsiniz.': 'This device already has {n} downloads running. You can start a new one when one finishes.',
+  'Bağlı cihazlar': 'Connected devices', 'Bu sunucuyu kullanan cihazlar, adları ve şu an indirdikleri.': 'Devices using this server, their names and what they are downloading now.',
+  'Akıllı TV': 'Smart TV', 'Android telefon': 'Android phone', 'Windows bilgisayar': 'Windows computer', 'Linux bilgisayar': 'Linux computer',
+  'Bilinmeyen cihaz': 'Unknown device', 'Şu an bağlı': 'Connected now', '{n} dk önce': '{n} min ago', '{n} sa önce': '{n} h ago',
+  '{n} gün önce': '{n} days ago', 'Cihaza ad verin': 'Name this device', 'Örn. Kamara 12 laptop': 'e.g. Cabin 12 laptop',
+  'Bu cihazı listeden kaldır': 'Remove this device from the list', 'Lumbuz’u tekrar açarsa listeye geri gelir.': 'It comes back to the list if it opens Lumbuz again.',
+  'Adı boş bırakırsanız tarayıcısından tahmin edilen ad kullanılır.': 'If you leave the name empty, a name guessed from its browser is used.',
+  'İndiren': 'Downloading', 'Şu an indirenler': 'Downloading now', 'Cihazlar': 'Devices', '{n} indirme': '{n} download(s)', 'Ad ver': 'Name',
+  'Henüz başka bir cihaz bağlanmadı.': 'No other device has connected yet.',
+  'Bir cihaza dokunup ad verebilirsiniz. Adlar yalnızca bu bilgisayarda görünür. Bir cihazın tarayıcı verileri silinirse yeni bir cihaz olarak görünür.':
+    'Tap a device to give it a name. Names are shown only on this computer. If a device clears its browser data, it shows up as a new device.',
   'QR kod': 'QR code', 'Telefonun kamerasıyla okutun': 'Scan it with your phone camera',
   'Lumbuz açılır. Sonra tarayıcıda “Ana ekrana ekle” derseniz uygulama gibi kalır.': 'Lumbuz opens. Choose “Add to Home screen” in the browser to keep it like an app.',
   'Telefon, tablet veya TV tarayıcısından bu adrese girin. Aynı Wi-Fi ağında olmanız yeterli. Lumbuz TV uygulaması sunucuyu ağda kendisi bulur.':

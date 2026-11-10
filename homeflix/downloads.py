@@ -1,8 +1,8 @@
-"""Downloads of local library files to a device: one file at a time per device, and all downloads together share a
-speed limit so they never take the bandwidth people need to watch.
+"""Downloads of local library files to a device: a few files at a time per device (1 unless the server owner changes
+it in Settings), and all downloads together share a speed limit so they never take the bandwidth people need to watch.
 
-A device is the viewer cookie (the same id that keeps its watch history). While a device's download is moving, a
-second one from that device is refused; a download that has sent nothing for STALE seconds (the connection died
+A device is the viewer cookie (the same id that keeps its watch history). While a device has as many downloads moving
+as it is allowed, another one from that device is refused; a download that has sent nothing for STALE seconds (the connection died
 without the server noticing) no longer counts, so a dropped download never leaves the device locked out.
 """
 import threading
@@ -11,12 +11,15 @@ import time
 CHUNK = 64 * 1024
 DEFAULT_MBPS = 40          # all downloads together, in megabits per second
 MIN_MBPS, MAX_MBPS = 5, 1000
+DEFAULT_PER_DEVICE = 1     # files one device may download at the same time
+MIN_PER_DEVICE, MAX_PER_DEVICE = 1, 5
 STALE = 30
 
 _lock = threading.Lock()
-_active = {}               # viewer -> {'token', 'name', 'size', 'sent', 'last'}
+_active = {}               # token -> {'viewer', 'name', 'size', 'sent', 'last'}
 _bucket = {'tokens': 0.0, 'at': time.monotonic()}
 _rate = {'bps': DEFAULT_MBPS * 125_000}
+_per = {'device': DEFAULT_PER_DEVICE}
 
 
 def set_limit(mbps):
@@ -33,12 +36,37 @@ def limit_mbps():
     return _rate['bps'] // 125_000
 
 
+def set_per_device(n):
+    try:
+        n = int(float(n))
+    except (TypeError, ValueError):
+        n = DEFAULT_PER_DEVICE
+    _per['device'] = max(MIN_PER_DEVICE, min(MAX_PER_DEVICE, n))
+    return _per['device']
+
+
+def per_device():
+    return _per['device']
+
+
+def _mine(viewer):
+    return [a for a in _active.values() if a['viewer'] == viewer and _alive(a)]
+
+
 def status(viewer):
-    """What this device is downloading now (or None), and how many devices are downloading in total."""
+    """What this device is downloading now, how many more it may start, and how many devices are downloading."""
     with _lock:
-        a = _active.get(viewer)
-        mine = {'name': a['name'], 'size': a['size'], 'sent': a['sent']} if _alive(a) else None
-        return {'mine': mine, 'count': sum(1 for x in _active.values() if _alive(x)), 'limit_mbps': limit_mbps()}
+        mine = [{'name': a['name'], 'size': a['size'], 'sent': a['sent']} for a in _mine(viewer)]
+        devices = {a['viewer'] for a in _active.values() if _alive(a)}
+        return {'mine': mine[0] if mine else None, 'mine_all': mine, 'per_device': per_device(),
+                'free': max(0, per_device() - len(mine)), 'count': len(devices), 'limit_mbps': limit_mbps()}
+
+
+def active():
+    """Every download moving now: which device, which file and how far it is."""
+    with _lock:
+        return [{'viewer': a['viewer'], 'name': a['name'], 'size': a['size'], 'sent': a['sent']}
+                for a in _active.values() if _alive(a)]
 
 
 def _take(n):
@@ -61,32 +89,33 @@ def _alive(a):
 
 
 def claim(viewer, name, size):
-    """Make this the device's one download, or return None while another download on this device is still moving.
-    A stalled earlier download is replaced and stops at its next chunk."""
+    """Start a download for this device, or return None while it already has as many moving as it is allowed.
+    Stalled earlier downloads of the device are dropped and stop at their next chunk."""
     token = object()
     with _lock:
-        if _alive(_active.get(viewer)):
+        for t, a in list(_active.items()):
+            if a['viewer'] == viewer and not _alive(a):
+                del _active[t]
+        if len(_mine(viewer)) >= per_device():
             return None
-        _active[viewer] = {'token': token, 'name': name, 'size': size, 'sent': 0, 'last': time.monotonic()}
+        _active[token] = {'viewer': viewer, 'name': name, 'size': size, 'sent': 0, 'last': time.monotonic()}
     return token
 
 
-def _release(viewer, token):
+def _release(token):
     with _lock:
-        if _active.get(viewer, {}).get('token') is token:
-            del _active[viewer]
+        _active.pop(token, None)
 
 
 def reader(path, viewer, token, start, length):
-    """Yield the byte range of the file, throttled; ends early if the device starts another download."""
+    """Yield the byte range of the file, throttled; ends early if the download was dropped as stalled."""
     try:
         with open(path, 'rb') as f:
             f.seek(start)
             left = length
             while left > 0:
                 with _lock:
-                    a = _active.get(viewer)
-                    if not a or a['token'] is not token:
+                    if token not in _active:
                         return
                 n = min(CHUNK, left)
                 _take(n)
@@ -95,10 +124,10 @@ def reader(path, viewer, token, start, length):
                     return
                 left -= len(data)
                 with _lock:
-                    a = _active.get(viewer)
-                    if a and a['token'] is token:
+                    a = _active.get(token)
+                    if a:
                         a['sent'] += len(data)
                         a['last'] = time.monotonic()
                 yield data
     finally:
-        _release(viewer, token)
+        _release(token)
