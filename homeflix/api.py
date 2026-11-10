@@ -575,7 +575,15 @@ def play(kind, iid):
     if request.args.get('mode') != 'stream' and audio == 0 and media.probe(path)['direct']:
         mime = 'video/webm' if path.lower().endswith('.webm') else 'video/mp4'
         return send_file(path, mimetype=mime, conditional=True)
-    return media.stream(path, request.args.get('t', 0, type=float), audio)
+    return media.stream(path, max(0.0, request.args.get('t', 0, type=float)), audio)
+
+
+@app.route('/api/seek/<kind>/<int:iid>')
+def api_seek(kind, iid):
+    """The time a stream asked to start at `t` really starts at (the keyframe before it), so the player's clock and
+    subtitles line up with the picture."""
+    path = media_path(kind, iid)
+    return jsonify({'start': media.seek_point(path, max(0.0, request.args.get('t', 0, type=float)))})
 
 
 def _download_name(kind, iid, path):
@@ -635,11 +643,11 @@ def download(kind, iid):
 @app.route('/api/hls/<kind>/<int:iid>')
 def api_hls(kind, iid):
     path = media_path(kind, iid)
-    sid = media.hls_start(path, max(0.0, request.args.get('t', 0, type=float)), request.args.get('a', 0, type=int),
-                          request.args.get('c', '')[:64])
+    t = max(0.0, request.args.get('t', 0, type=float))
+    sid = media.hls_start(path, t, request.args.get('a', 0, type=int), request.args.get('c', '')[:64])
     if not sid:
         abort(503)
-    return jsonify({'url': f'/hls/{sid}/index.m3u8'})
+    return jsonify({'url': f'/hls/{sid}/index.m3u8', 'start': media.seek_point(path, t)})
 
 
 @app.route('/api/hls/stop', methods=['POST'])

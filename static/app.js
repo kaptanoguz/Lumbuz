@@ -1056,8 +1056,9 @@ function loadSource(t) {
   const seq = ++P.loadSeq;
   if (P.mode === 'hls') {
     P.offset = t;
-    api.get(`/api/hls/${P.kind}/${P.id}?a=${P.audio}&t=${t.toFixed(1)}&c=${HLS_CLIENT}`).then(r => {
+    api.get(`/api/hls/${P.kind}/${P.id}?a=${P.audio}&t=${t.toFixed(3)}&c=${HLS_CLIENT}`).then(r => {
       if (seq !== P.loadSeq || !P.open) return;
+      if (typeof r.start === 'number') P.offset = r.start;
       v.src = r.url;
       P.hlsUrl = r.url;
       v.playbackRate = P.speed;
@@ -1067,7 +1068,18 @@ function loadSource(t) {
   }
   if (P.mode === 'stream') {
     P.offset = t;
-    v.src = `${base}?mode=stream&a=${P.audio}${t ? '&t=' + t.toFixed(1) : ''}`;
+    if (!t) { v.src = `${base}?mode=stream&a=${P.audio}`; v.playbackRate = P.speed; v.play().catch(() => {}); return; }
+    // A copied stream starts on a keyframe near t, not at t, so ask the server where exactly and use that as the
+    // clock's offset; otherwise subtitles are seconds off after every resume or long jump.
+    const go = s => {
+      if (seq !== P.loadSeq || !P.open) return;
+      P.offset = s;
+      v.src = `${base}?mode=stream&a=${P.audio}&t=${t.toFixed(3)}`;
+      v.playbackRate = P.speed;
+      v.play().catch(() => {});
+    };
+    api.get(`/api/seek/${P.kind}/${P.id}?t=${t.toFixed(3)}`).then(r => go(typeof r.start === 'number' ? r.start : t), () => go(t));
+    return;
   } else {
     P.offset = 0;
     v.src = base;

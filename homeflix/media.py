@@ -42,6 +42,10 @@ def probe(path):
         info['duration'] += float((d.get('format') or {}).get('duration') or 0)
         if i:
             continue
+        try:
+            info['start'] = float((d.get('format') or {}).get('start_time') or 0)
+        except ValueError:
+            info['start'] = 0.0
         for st in d.get('streams', []):
             tags = st.get('tags') or {}
             lang = (tags.get('language') or 'und').lower()
@@ -80,6 +84,30 @@ def _track_label(lang, title=None, channels=None):
     return label
 
 
+def seek_point(path, start):
+    """Where a stream asked to begin at `start` really begins. H.264 is copied, not re-encoded, and a copy can only
+    begin on a keyframe, so ffmpeg starts on a keyframe near `start` (often several seconds earlier, with some
+    containers later). The player must use this time as its clock offset, or subtitles drift by that much after
+    every resume or long jump. ffmpeg is asked the same seek with a single copied frame, so the answer matches
+    exactly what the real stream will do."""
+    info = probe(path)
+    if start <= 0 or (info['video'] or {}).get('codec', 'h264') != 'h264' or vob_parts(path):
+        return max(0.0, start)
+    try:
+        out = subprocess.run(['ffmpeg', '-v', 'error', '-nostdin', '-ss', f"{start:.3f}", '-i', path, '-map', '0:v:0',
+                              '-c:v', 'copy', '-frames:v', '1', '-copyts', '-f', 'framecrc', '-'],
+                             capture_output=True, text=True, timeout=10).stdout
+        tb = re.search(r'^#tb 0: (\d+)/(\d+)', out, re.M)
+        row = re.search(r'^0,\s*-?\d+,\s*(-?\d+),', out, re.M)
+        if not tb or not row:
+            return start
+        at = int(row.group(1)) * int(tb.group(1)) / int(tb.group(2)) - info.get('start', 0.0)
+    except Exception:
+        return start
+    # Anything far off means the file's timestamps are odd; then keep the old behaviour.
+    return round(at, 3) if 0 <= at and abs(at - start) < 60 else start
+
+
 def _transcode_cmd(path, start, audio, input_opts=()):
     """ffmpeg command up to the audio codec (input, mapping, H.264 video); returns it with the source audio codec."""
     info = probe(path)
@@ -92,7 +120,7 @@ def _transcode_cmd(path, start, audio, input_opts=()):
     if v != 'h264' and HAS_VAAPI:
         cmd += ['-vaapi_device', '/dev/dri/renderD128']
     if start > 0:
-        cmd += ['-ss', f"{start:.2f}"]
+        cmd += ['-ss', f"{start:.3f}"]
     cmd += [*input_opts, '-i', ('concat:' + '|'.join(parts)) if parts else path, '-map', '0:v:0', '-map', f'0:a:{audio}?']
     if v == 'h264':
         cmd += ['-c:v', 'copy']
