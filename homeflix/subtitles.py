@@ -15,26 +15,71 @@ SUB_EXTS = ('.srt', '.vtt', '.sub', '.ass', '.ssa')
 OS_HEADERS = {'Api-Key': OPENSUBTITLES_API_KEY, 'Content-Type': 'application/json', 'User-Agent': USER_AGENT}
 
 
+SUB_DIRS = ('subs', 'sub', 'subtitles', 'altyazi', 'altyazı', 'altyazılar')
+_LANG_WORDS = {'tr': 'Türkçe', 'tur': 'Türkçe', 'turkish': 'Türkçe', 'türkçe': 'Türkçe', 'turkce': 'Türkçe',
+               'en': 'İngilizce', 'eng': 'İngilizce', 'english': 'İngilizce'}
+
+
+def _sub_label(rest, fname, single):
+    """Label and language from what the file name says beyond the video's name ("tr", "English", "2_Eng.SDH")."""
+    words = [w for w in re.split(r'[^0-9a-zçğıöşü]+', rest.lower()) if w]
+    for w in words:
+        if w in _LANG_WORDS:
+            label = _LANG_WORDS[w]
+            if any(x in words for x in ('sdh', 'hi', 'cc')):
+                label += ' (SDH)'
+            elif any(x in words for x in ('forced', 'zorunlu')):
+                label += ' (zorunlu)'
+            return label, ('tr' if label.startswith('Türkçe') else 'en')
+    if not rest:
+        return ('Yerel altyazı' if single else fname), ''
+    return rest.upper() if len(rest) <= 12 else fname, ''
+
+
 def local_subtitles(video_path):
+    """Subtitle files that belong to the video: next to it, or in a Subs folder beside it (as many releases ship
+    them, also as Subs/<video name>/2_English.srt)."""
     folder, fname = os.path.split(video_path)
     base = os.path.splitext(fname)[0].lower()
     try:
-        files = sorted(f for f in os.listdir(folder) if f.lower().endswith(SUB_EXTS) and not f.startswith('._'))
+        entries = os.listdir(folder)
     except OSError:
         return []
-    videos = [f for f in os.listdir(folder) if os.path.splitext(f)[1].lower() in
+    videos = [f for f in entries if os.path.splitext(f)[1].lower() in
               ('.mp4', '.mkv', '.avi', '.ts', '.mov', '.m4v', '.wmv', '.webm', '.mpg', '.mpeg', '.vob')]
+    own_folder = len(videos) <= 1 or bool(vob_parts(video_path))
+    is_sub = lambda f: f.lower().endswith(SUB_EXTS) and not f.startswith('._')
+
+    found = []  # (path, file name, part of the name after the video's name or None)
+    files = sorted(f for f in entries if is_sub(f))
     matches = [f for f in files if f.lower().startswith(base)]
-    if not matches and len(videos) <= 1 or (not matches and vob_parts(video_path)):
+    if not matches and own_folder:
         matches = files
+    found += [(os.path.join(folder, f), f) for f in matches]
+    for d in sorted(e for e in entries if e.lower() in SUB_DIRS and os.path.isdir(os.path.join(folder, e))):
+        sd = os.path.join(folder, d)
+        try:
+            inner = sorted(os.listdir(sd))
+        except OSError:
+            continue
+        # Subs/<video name>/... (series packs)
+        for e in inner:
+            if e.lower() == base and os.path.isdir(os.path.join(sd, e)):
+                try:
+                    found += [(os.path.join(sd, e, f), f) for f in sorted(os.listdir(os.path.join(sd, e))) if is_sub(f)]
+                except OSError:
+                    pass
+        subs = [f for f in inner if is_sub(f)]
+        own = [f for f in subs if f.lower().startswith(base)]
+        found += [(os.path.join(sd, f), f) for f in (own or (subs if own_folder else []))]
+
     out = []
-    for i, f in enumerate(matches):
-        rest = os.path.splitext(f)[0][len(base):].strip('._- ').lower() if f.lower().startswith(base) else ''
-        label = {'tr': 'Türkçe', 'tur': 'Türkçe', 'turkish': 'Türkçe', 'en': 'İngilizce', 'eng': 'İngilizce',
-                 'english': 'İngilizce'}.get(rest, rest.upper() if rest else ('Yerel altyazı' if len(matches) == 1 else f))
-        out.append({'index': i, 'path': os.path.join(folder, f), 'label': label,
-                    'lang': 'tr' if label == 'Türkçe' else ('en' if label == 'İngilizce' else '')})
-    out.sort(key=lambda s: (s['lang'] != 'tr', s['index']))
+    for i, (path, f) in enumerate(found):
+        stem = os.path.splitext(f)[0]
+        rest = stem[len(base):].strip('._- ') if stem.lower().startswith(base) else (stem if os.path.dirname(path) != folder else '')
+        label, lang = _sub_label(rest, f, len(found) == 1)
+        out.append({'index': i, 'path': path, 'label': label, 'lang': lang})
+    out.sort(key=lambda s: (s['lang'] != 'tr', s['lang'] != '', s['index']))
     for i, s in enumerate(out):
         s['index'] = i
     return out
@@ -224,6 +269,21 @@ def _turkish_candidates(path, ids, query):
     return sorted(found)
 
 
+def _fits_length(vtt, path):
+    """False for a subtitle made for a much longer copy (e.g. 165 min of lines for an 86 min file): no shift can
+    make that one fit, so the next candidate is tried instead."""
+    from .media import probe
+    from .subsync import cue_times
+    try:
+        dur = probe(path)['duration']
+    except Exception:
+        return True
+    cues = cue_times(vtt)
+    if not dur or not cues:
+        return True
+    return cues[-1][0] <= dur * 1.1 + 120
+
+
 def auto_turkish(path, ids, query):
     """The video's Turkish subtitle as (vtt, label), downloading it once if needed; None if there is none
     (or no key, no internet, quota used up)."""
@@ -235,8 +295,13 @@ def auto_turkish(path, ids, query):
         return None
     with _auto_lock:  # two devices starting the same video must not spend two downloads
         cached = auto_cached(path)
-        if cached:
+        if cached and _fits_length(cached, path):
             return cached, 'Türkçe (internet)'
+        if cached:  # kept from before this check existed; made for a longer copy of the film
+            try:
+                os.remove(vtt_path)
+            except OSError:
+                pass
         try:
             if time.time() - os.path.getmtime(none_path) < AUTO_RETRY:
                 return None
@@ -248,12 +313,12 @@ def auto_turkish(path, ids, query):
         if not cands:
             open(none_path, 'w').close()
             return None
-        for _, _, _, fid, release in cands[:2]:
+        for _, _, _, fid, release in cands[:3]:
             try:
                 vtt = download_online(fid)
             except (requests.RequestException, ValueError):
                 vtt = None
-            if vtt and '-->' in vtt:
+            if vtt and '-->' in vtt and _fits_length(vtt, path):
                 with open(vtt_path, 'w', encoding='utf-8') as f:
                     f.write(vtt)
                 return vtt, 'Türkçe (internet)'

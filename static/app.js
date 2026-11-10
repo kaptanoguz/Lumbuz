@@ -1443,19 +1443,25 @@ function autoSubtitles() {
   const info = P.info;
   if (!info || P.kind === 'v' || store.get('subsOff', false)) return;
   const k = P.kind, id = P.id;
-  if (info.local_subs.length) return loadServerSub(`/sub/${k}/${id}/local/0`, info.local_subs[0].label, 'local:0');
+  // A Turkish (or unlabeled) file with the video comes first; one in another language only if no Turkish one is found.
+  const loc = info.local_subs[0];
+  if (loc && loc.lang !== 'en') return loadServerSub(`/sub/${k}/${id}/local/0`, loc.label, 'local:0');
   const turkishAudio = info.audio.some(a => ['tur', 'tr'].includes(a.lang));
   const tr = info.subs.find(s => ['tur', 'tr'].includes(s.lang));
   if (tr && !turkishAudio) return loadServerSub(`/sub/${k}/${id}/embedded/${tr.index}`, tr.label, 'emb:' + tr.index);
-  if (!turkishAudio) autoOnlineSub(k, id);
+  if (!turkishAudio) autoOnlineSub(k, id).then(found => {
+    if (!found && loc && P.kind === k && P.id === id && !P.subs && !store.get('subsOff', false)) loadServerSub(`/sub/${k}/${id}/local/0`, loc.label, 'local:0');
+  });
+  else if (loc) loadServerSub(`/sub/${k}/${id}/local/0`, loc.label, 'local:0');
 }
 // No Turkish subtitle with the video: the server looks one up on OpenSubtitles (once; it keeps the file, so it
 // also works offline later). Quietly does nothing without internet, and never replaces a subtitle picked meanwhile.
 async function autoOnlineSub(k, id) {
   let text = '';
   try { const r = await fetch(`/sub/${k}/${id}/auto`); if (r.status === 200) text = await r.text(); } catch (e) {}
-  if (!text || P.kind !== k || P.id !== id || P.subs || store.get('subsOff', false)) return;
+  if (!text || P.kind !== k || P.id !== id || P.subs || store.get('subsOff', false)) return false;
   if (setSubs(text, 'Türkçe (internet)', 'auto')) P.info.auto_sub = true;
+  return true;
 }
 function loadSubFile(file) {
   if (!file) return;
