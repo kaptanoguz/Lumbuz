@@ -1215,6 +1215,10 @@ def is_local_request():
     """True only for requests from this computer (app window, 127.0.0.1 or its own LAN address). A device that comes
     through the HTTPS name (Caddy on this computer) counts by its own address, not as this computer."""
     addr = client_ip()
+    if request.headers.get('X-Forwarded-For') and (addr.startswith('127.') or addr == '::1'):
+        # Came through a proxy that hid the device's address (e.g. a TLS pass-through in front of Caddy): it could be
+        # any device, so it is never treated as this computer.
+        return False
     return addr in ('127.0.0.1', '::1') or addr.startswith('127.') or addr in lan_ips()
 
 
