@@ -12,7 +12,7 @@ from urllib.parse import quote
 
 from flask import Flask, Response, abort, g, jsonify, render_template, request, send_file
 
-from . import clipmeta, clips, downloads, iptv, library, livetv, media, metadata, online, state, subsync, subtitles
+from . import activity, clipmeta, clips, downloads, iptv, library, livetv, media, metadata, online, state, subsync, subtitles
 from .config import BASE_DIR, ONLINE_EMBED, POSTERS_DIR
 from .db import LOCAL_VIEWER, library_dirs, load_settings, save_settings, session
 from .names import EXTRA_BASE, extra_title, fold, sequel_key
@@ -76,11 +76,16 @@ _seen = {}  # viewer -> (time written, ip, user agent): last_seen goes to the da
 @app.before_request
 def identify():
     vid = viewer()
-    # Remember the device for Settings › Connected devices. A request without the cookie yet (a first visit, or a player
-    # that sends no cookies) is skipped, so one-off visitors do not fill the list; the app's next call records it.
-    if vid == LOCAL_VIEWER or 'new_viewer' in g or not (request.path == '/' or request.path.startswith(('/api/', '/download/'))):
+    # Remember the device for Settings › Connected devices, and log its visit. A request without the cookie yet is
+    # recorded only when it opens the app or downloads a file (a player that sends no cookies would otherwise add a new
+    # device with every request); the cookie it gets now makes its next requests count as the same device.
+    p = request.path
+    if vid == LOCAL_VIEWER or not (p == '/' or p.startswith(('/api/', '/download/'))):
         return
-    now, ip, ua = time.time(), request.remote_addr or '', request.headers.get('User-Agent', '')[:300]
+    if 'new_viewer' in g and p != '/' and not p.startswith('/download/'):
+        return
+    now, ip, ua = time.time(), client_ip(), request.headers.get('User-Agent', '')[:300]
+    activity.visit(vid, ip)
     last = _seen.get(vid)
     if last and now - last[0] < 60 and last[1:] == (ip, ua):
         return
@@ -495,7 +500,31 @@ def api_progress():
     with session() as c:
         c.execute("INSERT OR REPLACE INTO progress (viewer, key, position, duration, finished, updated_at) "
                   "VALUES (?, ?, ?, ?, ?, ?)", (viewer(), key, 0 if finished else pos, dur, finished, time.time()))
+    if pos > 0:
+        activity.watch(viewer(), client_ip(), key, lambda: item_title(key), pos, dur)
     return jsonify({'ok': True, 'finished': bool(finished)})
+
+
+def item_title(key):
+    """'Film (2020)', 'Dizi S1:B2' or an Online title, for the activity log. '' when it is not known."""
+    try:
+        kind, _, rest = key.partition(':')
+        with session() as c:
+            if kind == 'm':
+                r = c.execute("SELECT title, year FROM movies WHERE id = ?", (int(rest),)).fetchone()
+                return f"{r['title']} ({r['year']})" if r and r['year'] else (r['title'] if r else '')
+            if kind == 'e':
+                r = c.execute("SELECT e.season, e.episode, COALESCE(s.display_title, s.title) AS st FROM episodes e "
+                              "JOIN series s ON s.id = e.series_id WHERE e.id = ?", (int(rest),)).fetchone()
+                return f"{r['st']} S{r['season']:02d}E{r['episode']:02d}" if r else ''
+            pk = online.parse_key(key)
+            if pk:
+                info = online.known(c, pk[0], pk[1]) or {}
+                name = info.get('t') or info.get('ot') or ''
+                return f"{name} S{pk[2]:02d}E{pk[3]:02d}" if name and pk[0] == 's' and pk[2] else name
+    except Exception:
+        pass
+    return ''
 
 
 @app.route('/api/progress/<key>', methods=['DELETE'])
@@ -646,7 +675,26 @@ def api_devices():
             'downloads': dls.pop(r['viewer'], [])} for r in rows]
     # A download from a device that is not in the list yet still shows up.
     out += [{'id': v, 'name': '', 'ua': '', 'ip': '', 'first_seen': now, 'ago': 0, 'downloads': d} for v, d in dls.items()]
-    return jsonify({'devices': out})
+    return jsonify({'devices': out, 'activity': _activity_rows(activity.recent(limit=40))})
+
+
+def _activity_rows(rows):
+    now = time.time()
+    return [{'id': r['id'], 'device': r['viewer'], 'ip': r['ip'] or '', 'kind': r['kind'], 'key': r['key'] or '',
+             'title': r['title'] or '', 'at': r['at'], 'ago': max(0, int(now - (r['at'] or now))),
+             'pos': r['pos'] or 0, 'dur': r['dur'] or 0, 'size': r['size'] or 0, 'sent': r['sent'] or 0,
+             'secs': max(0, int((r['until'] or r['at'] or now) - (r['at'] or now)))} for r in rows]
+
+
+@app.route('/api/activity')
+def api_activity():
+    """The activity log, newest first: ?device=<id> for one device, ?before=<time> for older rows. Server computer only."""
+    if not is_local_request():
+        abort(403)
+    before = _num(request.args.get('before')) or None
+    rows = activity.recent(viewer=request.args.get('device') or None, limit=_num(request.args.get('limit')) or 100,
+                           before=before)
+    return jsonify({'activity': _activity_rows(rows)})
 
 
 @app.route('/api/devices/<vid>', methods=['POST', 'DELETE'])
@@ -660,7 +708,11 @@ def api_device(vid):
             _seen.pop(vid, None)
         else:
             name = str((request.get_json(force=True, silent=True) or {}).get('name', '')).strip()[:40]
-            c.execute("UPDATE devices SET name = ? WHERE viewer = ?", (name, vid))
+            # A device seen only through a download (or before this list existed) has no row yet: make one, so the
+            # name is kept.
+            now = time.time()
+            c.execute("INSERT INTO devices (viewer, name, ua, ip, first_seen, last_seen) VALUES (?, ?, '', '', ?, ?) "
+                      "ON CONFLICT(viewer) DO UPDATE SET name = excluded.name", (vid[:64], name, now, now))
     return jsonify({'ok': True})
 
 
@@ -694,8 +746,24 @@ def download(kind, iid):
                'Content-Length': str(length), 'Accept-Ranges': 'bytes', 'Cache-Control': 'no-store'}
     if rng and (rng.group(1) or rng.group(2)):
         headers['Content-Range'] = f'bytes {start}-{end}/{size}'
-    return Response(downloads.reader(path, viewer(), token, start, length), status=206 if 'Content-Range' in headers else 200,
+    rid = activity.download_start(viewer(), client_ip(), f"{kind}:{iid}", name, size, start)
+    return Response(_logged(downloads.reader(path, viewer(), token, start, length), rid),
+                    status=206 if 'Content-Range' in headers else 200,
                     mimetype='application/octet-stream', headers=headers, direct_passthrough=True)
+
+
+def _logged(chunks, rid):
+    """Pass a download through and write to its log row how much was sent: every ~50 MB and when it ends."""
+    sent = mark = 0
+    try:
+        for data in chunks:
+            sent += len(data)
+            if sent - mark >= 50 * 1024 * 1024:
+                mark = sent
+                activity.download_end(rid, sent)
+            yield data
+    finally:
+        activity.download_end(rid, sent)
 
 
 @app.route('/api/hls/<kind>/<int:iid>')
@@ -1136,9 +1204,17 @@ def lan_ips():
         return []
 
 
+def client_ip():
+    """The device's own address, also behind the HTTPS proxy (see activity.client_ip)."""
+    if 'client_ip' not in g:
+        g.client_ip = activity.client_ip(request)
+    return g.client_ip
+
+
 def is_local_request():
-    """True only for requests from this computer (app window, 127.0.0.1 or its own LAN address)."""
-    addr = request.remote_addr or ''
+    """True only for requests from this computer (app window, 127.0.0.1 or its own LAN address). A device that comes
+    through the HTTPS name (Caddy on this computer) counts by its own address, not as this computer."""
+    addr = client_ip()
     return addr in ('127.0.0.1', '::1') or addr.startswith('127.') or addr in lan_ips()
 
 

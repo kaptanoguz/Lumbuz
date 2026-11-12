@@ -662,7 +662,7 @@ function stCats() {
     ['subs', 'cc', 'Altyazı', 'Altyazının görünüşü ve kendiliğinden açılması.'],
     ['random', 'shuffle', 'Rastgele film', 'Rastgele film düğmesinin hangi filmlerden seçeceği.'],
     ST.s.local && ['downloads', 'download', 'İndirmeler', 'Kütüphane dosyaları indirilirken ağın ne kadarının kullanılacağı.'],
-    ST.s.local && ['clients', 'monitor', 'Bağlı cihazlar', 'Bu sunucuyu kullanan cihazlar, adları ve şu an indirdikleri.'],
+    ST.s.local && ['clients', 'monitor', 'Bağlı cihazlar', 'Bu sunucuyu kullanan cihazlar, ne izleyip ne indirdikleri.'],
     ['devices', 'wifi', 'Diğer cihazlar', 'Telefon, tablet ve TV’den Lumbuz’a bağlanın.'],
     ['lang', 'lang', 'Dil · Language', 'Menülerin ve düğmelerin dili.'],
     ['keys', 'keyboard', 'Klavye kısayolları', 'Bilgisayarda klavyeyle hızlı kullanım.'],
@@ -941,7 +941,7 @@ const DL_PER = [1, 2, 3, 5];
 // Settings › Connected devices (server computer only): every device that used Lumbuz lately, by its viewer cookie.
 // A device can be given a name; without one it is named after its browser ("Android phone", "LG TV"...). The list
 // refreshes every few seconds while it is open, so downloads move along.
-const CL_DEV = { list: null, edit: '', timer: 0 };
+const CL_DEV = { list: null, act: [], hist: null, edit: '', timer: 0 };
 function guessDevice(ua) {
   const u = ua || '';
   if (/Web0S|webOS|NetCast/i.test(u)) return ['LG TV', 'tv'];
@@ -962,7 +962,32 @@ function agoText(sec) {
   return T('{n} gün önce', { n: Math.floor(sec / 86400) });
 }
 const devName = d => d.name ? esc(d.name) : T(guessDevice(d.ua)[0]);
+// Activity log rows: a visit, a watched title (how far it got) or a download (how much of it arrived).
+const actWhen = a => new Date(a.at * 1000).toLocaleString(LOCALE, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+const actMin = s => s >= 3600 ? T('{h} sa {m} dk', { h: Math.floor(s / 3600), m: Math.floor(s % 3600 / 60) }) : T('{n} dk', { n: Math.max(1, Math.round(s / 60)) });
+function actRow(a, withDev) {
+  const dev = (CL_DEV.list || []).find(d => d.id === a.device);
+  const who = a.device === 'local' ? T('Bu bilgisayar') : dev ? devName(dev) : T('Bilinmeyen cihaz');
+  const online = /^o[mes]:/.test(a.key) ? ' · ' + T('Online') : '';
+  let ic = 'wifi', what = T('Bağlandı'), extra = '';
+  if (a.kind === 'watch') {
+    ic = 'play';
+    what = esc(a.title) || T('Bilinmeyen içerik');
+    extra = (a.dur ? `${actMin(a.pos)} / ${actMin(a.dur)}` : actMin(a.pos)) + online;
+  } else if (a.kind === 'download') {
+    ic = 'download';
+    what = esc(a.title) || T('Bilinmeyen dosya');
+    const got = a.pos + a.sent, done = a.size && got >= a.size;
+    extra = done ? T('Tamamlandı') : T('Yarım kaldı: %{p}', { p: a.size ? Math.floor(got / a.size * 100) : 0 });
+    if (a.size) extra += ' · ' + fmtSize(a.size);
+  }
+  const sub = [actWhen(a), a.ip && esc(a.ip), extra].filter(Boolean).join(' · ');
+  const open = withDev && dev ? `data-dev="${esc(dev.id)}"` : '';
+  return stRow({ ic, title: withDev ? `${who} · ${what}` : what, sub, attrs: open, end: open ? icon('right', 'st-end') : '' });
+}
 const dlLine = x => `${esc(x.name)} · %${x.size ? Math.floor(x.sent / x.size * 100) : 0}${x.size ? ' / ' + fmtSize(x.size) : ''}`;
+const histHtml = () => CL_DEV.hist === null ? stHint(T('Yükleniyor…'))
+  : CL_DEV.hist.length ? CL_DEV.hist.map(a => actRow(a, false)).join('') : stHint(T('Bu cihaz için kayıt yok.'));
 function clientsHtml() {
   const list = CL_DEV.list || [];
   const online = list.filter(d => d.ago < 300).length, dls = list.flatMap(d => d.downloads.map(x => [d, x]));
@@ -974,7 +999,9 @@ function clientsHtml() {
       ${stRow({ ic: 'check', title: T('Kaydet'), attrs: 'data-dev-save' })}
       ${stRow({ ic: 'x', title: T('Vazgeç'), attrs: 'data-dev-cancel' })}
       ${stRow({ ic, title: T('Bu cihazı listeden kaldır'), sub: T('Lumbuz’u tekrar açarsa listeye geri gelir.'), attrs: 'data-dev-forget' })}
-      ${stHint(T('Adı boş bırakırsanız tarayıcısından tahmin edilen ad kullanılır.'))}`;
+      ${stHint(T('Adı boş bırakırsanız tarayıcısından tahmin edilen ad kullanılır.'))}
+      ${stGroup(T('Geçmiş'))}
+      <div id="dev-hist" style="display:contents">${histHtml()}</div>`;
   }
   return `<div class="st-tiles">${stTile(T('Şu an bağlı'), online)}${stTile(T('İndiren'), new Set(dls.map(([d]) => d.id)).size)}</div>
     ${dls.length ? `${stGroup(T('Şu an indirenler'))}${dls.map(([d, x]) => stRow({ ic: 'download', title: devName(d), sub: dlLine(x), attrs: `data-dev="${esc(d.id)}"`, end: icon('right', 'st-end') })).join('')}` : ''}
@@ -983,13 +1010,14 @@ function clientsHtml() {
       const sub = [agoText(d.ago), d.ip && esc(d.ip), d.downloads.length && T('{n} indirme', { n: d.downloads.length })].filter(Boolean).join(' · ');
       return stRow({ ic: guessDevice(d.ua)[1], title: devName(d), sub, on: d.ago < 300, attrs: `data-dev="${esc(d.id)}" aria-label="${T('Ad ver')}: ${devName(d)}"`, end: icon('right', 'st-end') });
     }).join('') : stHint(T('Henüz başka bir cihaz bağlanmadı.'))}
+    ${CL_DEV.act.length ? `${stGroup(T('Son etkinlik'))}${CL_DEV.act.map(a => actRow(a, true)).join('')}` : ''}
     ${stHint(T('Bir cihaza dokunup ad verebilirsiniz. Adlar yalnızca bu bilgisayarda görünür. Bir cihazın tarayıcı verileri silinirse yeni bir cihaz olarak görünür.'))}`;
 }
 async function loadClients() {
   clearTimeout(CL_DEV.timer);
   const box = $('#st-clients');
   if (!box) return;
-  try { CL_DEV.list = (await api.get('/api/devices')).devices; } catch { CL_DEV.list = CL_DEV.list || []; }
+  try { const r = await api.get('/api/devices'); CL_DEV.list = r.devices; CL_DEV.act = r.activity || []; } catch { CL_DEV.list = CL_DEV.list || []; }
   if (!$('#st-clients') || ST.cat !== 'clients') return;
   if (!CL_DEV.edit) {
     const a = document.activeElement, key = a?.dataset?.dev;
@@ -1000,7 +1028,14 @@ async function loadClients() {
 }
 function devEdit(id) {
   CL_DEV.edit = id;
+  CL_DEV.hist = null;
   $('#st-clients').innerHTML = clientsHtml();
+  api.get(`/api/activity?device=${encodeURIComponent(id)}&limit=100`).then(r => r.activity, () => []).then(h => {
+    if (CL_DEV.edit !== id || !$('#st-clients')) return;
+    CL_DEV.hist = h;
+    const box = $('#dev-hist');
+    if (box) box.innerHTML = histHtml();
+  });
   const inp = $('#dev-name');
   if (!inp) return;
   inp.addEventListener('keydown', e => { if (e.key === 'Enter') devSave(); else if (e.key === 'Escape') { e.stopPropagation(); devDone(); } });
