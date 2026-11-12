@@ -54,6 +54,12 @@ CREATE TABLE IF NOT EXISTS iptv_sources (id INTEGER PRIMARY KEY AUTOINCREMENT, v
 -- what the server owner called it; empty = a name guessed from the browser. last_seen is updated at most once a minute.
 CREATE TABLE IF NOT EXISTS devices (viewer TEXT PRIMARY KEY, name TEXT DEFAULT '', ua TEXT, ip TEXT, first_seen REAL,
     last_seen REAL);
+-- Activity log (activity.py): kind 'visit' (a device connected), 'watch' (pos/dur = how far it got) or 'download'
+-- (size, sent = bytes sent so far, pos = byte it started at). until = last update. key = the item key (m:12, e:34...).
+CREATE TABLE IF NOT EXISTS activity (id INTEGER PRIMARY KEY AUTOINCREMENT, at REAL, until REAL, viewer TEXT, ip TEXT,
+    kind TEXT, key TEXT, title TEXT, pos REAL, dur REAL, size INTEGER, sent INTEGER);
+CREATE INDEX IF NOT EXISTS idx_activity_at ON activity(at);
+CREATE INDEX IF NOT EXISTS idx_activity_viewer ON activity(viewer, at);
 CREATE INDEX IF NOT EXISTS idx_episodes_series ON episodes(series_id, season, episode);
 """
 

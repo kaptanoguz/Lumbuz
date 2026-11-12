@@ -128,7 +128,7 @@ const EN = {
     'All downloads together stay under this speed. A device can download at most this many files at once; with more downloads, each gets a smaller share of the speed.',
   'Cihaz başına aynı anda {n} indirme': '{n} download(s) at a time per device',
   'Bu cihazda zaten {n} indirme sürüyor. Biri bitince yenisini başlatabilirsiniz.': 'This device already has {n} downloads running. You can start a new one when one finishes.',
-  'Bağlı cihazlar': 'Connected devices', 'Bu sunucuyu kullanan cihazlar, adları ve şu an indirdikleri.': 'Devices using this server, their names and what they are downloading now.',
+  'Bağlı cihazlar': 'Connected devices', 'Bu sunucuyu kullanan cihazlar, ne izleyip ne indirdikleri.': 'Devices using this server, what they watched and downloaded.',
   'Akıllı TV': 'Smart TV', 'Android telefon': 'Android phone', 'Windows bilgisayar': 'Windows computer', 'Linux bilgisayar': 'Linux computer',
   'Bilinmeyen cihaz': 'Unknown device', 'Şu an bağlı': 'Connected now', '{n} dk önce': '{n} min ago', '{n} sa önce': '{n} h ago',
   '{n} gün önce': '{n} days ago', 'Cihaza ad verin': 'Name this device', 'Örn. Kamara 12 laptop': 'e.g. Cabin 12 laptop',
@@ -136,6 +136,9 @@ const EN = {
   'Adı boş bırakırsanız tarayıcısından tahmin edilen ad kullanılır.': 'If you leave the name empty, a name guessed from its browser is used.',
   'İndiren': 'Downloading', 'Şu an indirenler': 'Downloading now', 'Cihazlar': 'Devices', '{n} indirme': '{n} download(s)', 'Ad ver': 'Name',
   'Henüz başka bir cihaz bağlanmadı.': 'No other device has connected yet.',
+  'Son etkinlik': 'Recent activity', 'Yükleniyor…': 'Loading…', 'Geçmiş': 'History', 'Bu cihaz için kayıt yok.': 'Nothing recorded for this device yet.',
+  'Bu bilgisayar': 'This computer', 'Bağlandı': 'Connected', 'Bilinmeyen içerik': 'Unknown title', 'Bilinmeyen dosya': 'Unknown file',
+  'Tamamlandı': 'Finished', 'Yarım kaldı: %{p}': 'Stopped at {p}%', '{h} sa {m} dk': '{h} h {m} min', '{n} dk': '{n} min',
   'Bir cihaza dokunup ad verebilirsiniz. Adlar yalnızca bu bilgisayarda görünür. Bir cihazın tarayıcı verileri silinirse yeni bir cihaz olarak görünür.':
     'Tap a device to give it a name. Names are shown only on this computer. If a device clears its browser data, it shows up as a new device.',
   'QR kod': 'QR code', 'Telefonun kamerasıyla okutun': 'Scan it with your phone camera',
