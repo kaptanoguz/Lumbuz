@@ -3006,7 +3006,8 @@ function tuneLive(ch) {
     f.hidden = false;
     // The current live video by id (looked up by the server) plays on more devices than the by-channel embed.
     // A channel without a 24/7 live stream plays its own videos one after another (ytl: its uploads playlist).
-    f.src = ch.ytl ? `https://www.youtube.com/embed/videoseries?list=${encodeURIComponent(ch.ytl)}&autoplay=1&playsinline=1&rel=0`
+    f.src = ch.ytl && ch.ytv ? `https://www.youtube.com/embed/${encodeURIComponent(ch.ytv)}?playlist=${encodeURIComponent(ch.ytp || ch.ytv)}&autoplay=1&playsinline=1&rel=0`
+      : ch.ytl ? `https://www.youtube.com/embed/videoseries?list=${encodeURIComponent(ch.ytl)}&autoplay=1&playsinline=1&rel=0`
       : ch.ytv ? `https://www.youtube.com/embed/${encodeURIComponent(ch.ytv)}?autoplay=1&playsinline=1&rel=0`
       : `https://www.youtube.com/embed/live_stream?channel=${encodeURIComponent(ch.yt)}&autoplay=1&playsinline=1&rel=0`;
     f.onload = () => { if (seq === LV.seq) $('#l-loading').classList.add('off'); };

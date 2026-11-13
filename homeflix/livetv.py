@@ -168,6 +168,11 @@ def channels():
             item['yt'] = chan
             if fixed == 'uploads':
                 item['ytl'] = 'UU' + chan[2:]
+                # Already published videos only: the uploads playlist starts with announced premieres, which
+                # YouTube's player shows as "Video unavailable".
+                vids = _ytu.get(chan, (0, []))[1]
+                if vids:
+                    item['ytv'], item['ytp'] = vids[0], ','.join(vids[1:])
             else:
                 vid = fixed or _yt.get(chan, (0, None))[1]
                 if vid:
@@ -203,7 +208,9 @@ def _check_url(url):
     """(on air, CORS allowed) for one stream. Downloads only playlist text (a few KB), never video: the master
     playlist and its first quality, since a master can answer while every quality behind it is refused."""
     if url.startswith('yt:'):
-        if '#' not in url:
+        if url.endswith('#uploads'):
+            youtube_uploads(url[3:].partition('#')[0])
+        elif '#' not in url:
             youtube_live(url[3:])  # when the lookup fails, the app falls back to YouTube's by-channel embed
         return True, None
     try:
@@ -296,6 +303,31 @@ def _yt_feed(channel_id):
     except (requests.RequestException, OSError):
         return []
     return re.findall(r'<yt:videoId>([\w-]{11})</yt:videoId>', body) if status == 200 else []
+
+
+_ytu = {}
+
+
+def youtube_uploads(channel_id):
+    """The channel's newest published videos (up to 15), newest first, from its feed. Premieres that haven't
+    started yet have no views, so they are left out."""
+    hit = _ytu.get(channel_id)
+    if hit and time.time() - hit[0] < YT_MAX_AGE:
+        return hit[1]
+    vids = []
+    try:
+        status, body, _, _ = _read(f'https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}', _YT_HEADERS)
+        if status == 200:
+            for entry in body.split('<entry>')[1:]:
+                vid = re.search(r'<yt:videoId>([\w-]{11})</yt:videoId>', entry)
+                views = re.search(r'<media:statistics views="(\d+)"', entry)
+                if vid and views and int(views.group(1)) > 0:
+                    vids.append(vid.group(1))
+    except (requests.RequestException, OSError):
+        pass
+    vids = vids or (hit[1] if hit else [])
+    _ytu[channel_id] = (time.time(), vids)
+    return vids
 
 
 def youtube_live(channel_id):
