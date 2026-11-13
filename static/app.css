@@ -237,9 +237,14 @@ main { min-height: 100vh; }
 .d-head { position: absolute; z-index: 2; left: 44px; right: 44px; bottom: 26px; }
 .d-prov { display: flex; margin: -4px 0 18px; }
 .d-prov:empty { display: none; }
-.d-prov img { width: 40px; height: 40px; margin-right: 8px; border-radius: 10px; box-shadow: 0 4px 14px rgba(0,0,0,.45); }
+.d-prov .prov { display: block; flex: none; height: 40px; margin-right: 8px; padding: 0; border-radius: 10px; box-shadow: 0 4px 14px rgba(0,0,0,.45); transition: transform .18s var(--ease), box-shadow .18s; }
+.d-prov img { display: block; width: 40px; height: 40px; border-radius: 10px; }
+button.prov { cursor: pointer; }
+button.prov:hover { transform: translateY(-2px) scale(1.06); }
+.kb button.prov:focus, button.prov.hf-focus { outline: none !important; box-shadow: 0 0 0 3px #fff, 0 6px 20px rgba(0,0,0,.5) !important; transform: scale(1.12); }
 /* A series' own channel (Hulu, Apple TV+…): a wide, often dark logo, so it sits on a light tile. */
-.d-prov img.wide { width: auto; max-width: 120px; padding: 9px 12px; background: #f2f2f5; object-fit: contain; box-sizing: border-box; }
+.d-prov .prov.wide { background: #f2f2f5; }
+.d-prov .prov.wide img { width: auto; max-width: 120px; padding: 9px 12px; object-fit: contain; box-sizing: border-box; }
 .d-head h1 { font-size: clamp(28px, 4vw, 52px); margin: 0 0 18px; line-height: 1.02; font-weight: 800; letter-spacing: -.02em; max-width: 80%; text-shadow: 0 3px 20px rgba(0,0,0,.5); }
 .d-body { padding: 8px 44px 40px; }
 .d-grid { display: grid; grid-template-columns: minmax(0, 1.9fr) minmax(0, 1fr); gap: 34px; }
@@ -957,4 +962,53 @@ main { min-height: 100vh; }
   .cl-hero-in { flex-direction: column; align-items: center; text-align: center; gap: 16px; padding-top: calc(var(--nav-h) + 24px); }
   .cl-hero-in > .av { width: 132px; }
   .cl-hero .actions { justify-content: center; }
+}
+
+/* ---------------------------------------------------------------- platform pages (Netflix, Disney+…) */
+.pf { --pf: #a1a1aa; --pf-soft: rgba(161,161,170,.35); --pf-ink: #0b0b0f; --pf-bg: #111116; --pf-bg2: #2a2a33; background: linear-gradient(180deg, var(--pf-bg2) 0%, var(--pf-bg) 420px, var(--pf-bg) 100%); min-height: 70vh; transition: background .4s; }
+.pf-hero { position: relative; height: 340px; overflow: hidden; }
+.pf-wall { position: absolute; inset: -60px -40px auto; display: flex; flex-wrap: wrap; gap: 12px; transform: rotate(-8deg) scale(1.08); opacity: .32; }
+.pf-wall img { width: 128px; aspect-ratio: 2 / 3; object-fit: cover; border-radius: 8px; }
+.pf-hero::after { content: ""; position: absolute; inset: 0; background: linear-gradient(0deg, var(--pf-bg) 2%, transparent 70%), linear-gradient(90deg, var(--pf-bg2) 0%, transparent 75%); opacity: .95; }
+.pf-head { position: absolute; z-index: 2; left: 44px; right: 44px; bottom: 30px; display: flex; align-items: flex-end; gap: 26px; }
+.pf-logo { flex: none; width: 124px; height: 124px; border-radius: 28px; overflow: hidden; display: grid; place-items: center; background: var(--pf-bg);
+  box-shadow: 0 0 0 1px rgba(255,255,255,.12), 0 18px 50px rgba(0,0,0,.6), 0 0 70px var(--pf-soft); }
+.pf-logo img { width: 100%; height: 100%; object-fit: cover; }
+.pf-logo.wide { width: 200px; height: 96px; background: #f2f2f5; padding: 16px 22px; box-sizing: border-box; border-radius: 22px; }
+.pf-logo.wide img { object-fit: contain; }
+.pf-logo b { font-size: 60px; color: var(--pf); }
+.pf-title small { display: block; font-size: 13px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; color: var(--pf); margin-bottom: 6px; }
+.pf-title h1 { margin: 0; font-size: clamp(34px, 5vw, 60px); line-height: 1; font-weight: 800; letter-spacing: -.02em; text-shadow: 0 3px 24px rgba(0,0,0,.5); }
+.pf-title p { margin: 10px 0 0; font-size: 17px; color: #e4e4e7; font-weight: 600; }
+.pf-body { padding: 6px 44px 44px; }
+.pf-bar { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px 24px; margin: 6px 0 22px; padding-bottom: 18px; border-bottom: 1px solid var(--pf-soft); }
+.pf-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.pf .chip { background: rgba(255,255,255,.06); border-color: rgba(255,255,255,.12); }
+.pf .chip.on { background: var(--pf); border-color: var(--pf); color: var(--pf-ink); }
+.kb .pf .chip:focus, .pf .chip.hf-focus { background: #fff !important; color: #0b0b0f !important; border-color: #fff; outline: none !important; box-shadow: 0 6px 20px rgba(0,0,0,.4) !important; }
+.pf-grid { padding: 0; }
+.pf .card .art { box-shadow: 0 0 0 1px rgba(255,255,255,.05); }
+.pf .card:hover .art { box-shadow: 0 0 0 2px var(--pf), 0 14px 34px rgba(0,0,0,.5); }
+.pf .score { color: var(--pf); }
+.pf-more { margin-top: 44px; }
+.pf-others { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 14px; }
+.pf-other { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 14px 8px 12px; border-radius: 16px; background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.07); transition: .2s var(--ease); }
+.pf-other:hover { background: rgba(255,255,255,.1); transform: translateY(-2px); }
+.kb .pf-other:focus, .pf-other.hf-focus { background: #fff !important; color: #0b0b0f; outline: none !important; transform: scale(1.05); }
+.kb .pf-other:focus small, .pf-other.hf-focus small { color: #52525b; }
+.pf-ol { width: 56px; height: 56px; border-radius: 14px; overflow: hidden; box-shadow: 0 6px 18px rgba(0,0,0,.4); }
+.pf-ol.wide { width: 88px; background: #f2f2f5; padding: 10px; box-sizing: border-box; }
+.pf-ol img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pf-ol.wide img { object-fit: contain; }
+.pf-on { font-size: 13px; font-weight: 600; text-align: center; line-height: 1.2; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pf-other small { font-size: 12px; color: var(--dim); }
+@media (max-width: 860px) {
+  .pf-hero { height: 260px; }
+  .pf-head { left: 18px; right: 18px; bottom: 18px; gap: 16px; }
+  .pf-logo { width: 84px; height: 84px; border-radius: 20px; }
+  .pf-logo.wide { width: 140px; height: 70px; padding: 12px 16px; }
+  .pf-title p { font-size: 15px; }
+  .pf-body { padding: 4px 16px 40px; }
+  .pf-grid { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 20px 12px; }
+  .pf-others { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); }
 }

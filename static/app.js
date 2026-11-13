@@ -447,15 +447,13 @@ window.addEventListener('popstate', () => {
 /* ================================================================ detail */
 let detailKey = null;
 
-async function openDetail(key) {
+async function openDetail(key, { back: restoring = false } = {}) {
+  if (!restoring) detailStep(key);
+  if (key.startsWith('p:')) return openPlatform(key.slice(2));
   if (/^o[ms]:\d+$/.test(key)) return openOnlineDetail(key);
   const it = S.byKey.get(key) || (key.startsWith('m:') ? S.movieToTitle.get(+key.slice(2)) : null);
   if (!it) return;
-  const el = $('#detail');
-  if (!el.classList.contains('open')) {
-    el.classList.add('open');
-    pushOverlay('detail', () => { el.classList.remove('open'); detailKey = null; });
-  }
+  openSheet();
   detailKey = it.key;
   $('#detail-scroll').scrollTop = 0;
   if (it.kind === 'c') return renderCollectionDetail(it);
@@ -473,10 +471,169 @@ function detailHero(it, title, actions, metaHTML) {
     <div class="d-head"><h1>${esc(title)}</h1>${metaHTML ? `<div class="meta" style="margin-bottom:18px">${metaHTML}</div>` : ''}<div class="d-prov" id="d-prov"></div><div class="actions">${actions}</div></div></div>`;
 }
 // Logos of the streaming services that carry the title in Turkey, with no heading (Oğuz's wish). Saved on the server.
+// Each opens its platform page: everything in the library that the platform carries.
 function fillProviders(list, key) {
   const box = $('#d-prov');
   if (!box || detailKey !== key || !list?.length) return;
-  box.innerHTML = list.map(p => `<img${p.w ? ' class="wide"' : ''} src="/img/tmdb/w92${esc(p.l)}" alt="${esc(p.n)}" title="${esc(p.n)}" onerror="this.remove()">`).join('');
+  box.innerHTML = list.map(p => {
+    const name = esc(pfName(p.id, p.n));
+    const logo = `<img src="/img/tmdb/w92${esc(p.l)}" alt="${name}" onerror="this.parentNode.remove()">`;
+    return p.id ? `<button class="prov${p.w ? ' wide' : ''}" data-open="p:${esc(p.id)}" title="${T('{p} arşivi', { p: name })}" aria-label="${T('{p} arşivi', { p: name })}">${logo}</button>`
+      : `<span class="prov${p.w ? ' wide' : ''}" title="${name}">${logo}</span>`;
+  }).join('');
+}
+
+/* ---------------------------------------------------------------- platform pages */
+// A page per platform (Netflix, Disney+…) with every title of the library it carries, in the platform's colours.
+// It opens inside the detail sheet; going in or out of it is a step on the history, so Back returns to where you were.
+function detailStep(key) {
+  const prev = detailKey;
+  if (!$('#detail').classList.contains('open') || !prev || prev === key || !(key.startsWith('p:') || prev.startsWith('p:'))) return;
+  const sc = $('#detail-scroll'), y = sc.scrollTop;
+  pushOverlay('dview', () => {
+    if (detailKey === null) return;
+    openDetail(prev, { back: true });
+    setTimeout(() => { sc.scrollTop = y; }, 60);
+  });
+}
+
+// Brand names and colours: bg/bg2 for the page, accent for the highlights. Others take a colour from their logo.
+const PF_THEME = {
+  netflix: { n: 'Netflix', bg: '#0a0a0a', bg2: '#2b0306', a: '#e50914' },
+  primevideo: { n: 'Prime Video', bg: '#0f171e', bg2: '#0b3a5e', a: '#1a98ff' },
+  disneyplus: { n: 'Disney+', bg: '#060b25', bg2: '#0e3a8a', a: '#3ed0f5' },
+  max: { n: 'HBO Max', bg: '#02030f', bg2: '#0b2aa8', a: '#4d6bff' },
+  appletvplus: { n: 'Apple TV+', bg: '#000000', bg2: '#2a2a2e', a: '#f5f5f7' },
+  hulu: { n: 'Hulu', bg: '#06090a', bg2: '#0c3b26', a: '#1ce783' },
+  paramountplus: { n: 'Paramount+', bg: '#000a24', bg2: '#0a3fa8', a: '#2f7bff' },
+  peacock: { n: 'Peacock', bg: '#050505', bg2: '#3a2a05', a: '#fbb03b' },
+  tvplus: { n: 'TV+', bg: '#03122b', bg2: '#08408c', a: '#ffc900' },
+  blutv: { n: 'BluTV', bg: '#020c22', bg2: '#06357d', a: '#1fa2ff' },
+  exxen: { n: 'Exxen', bg: '#0a0a0a', bg2: '#3d3300', a: '#ffd500' },
+  tod: { n: 'TOD', bg: '#0d0420', bg2: '#3a0f73', a: '#a45bff' },
+  mubi: { n: 'MUBI', bg: '#05070f', bg2: '#1c2340', a: '#ffffff' },
+  crunchyroll: { n: 'Crunchyroll', bg: '#0b0b0b', bg2: '#4a1f05', a: '#f47521' },
+  starz: { n: 'Starz', bg: '#000000', bg2: '#262626', a: '#ffffff' },
+  youtubefree: { n: 'YouTube', bg: '#0f0f0f', bg2: '#3d0707', a: '#ff0033' },
+  youtubetv: { n: 'YouTube TV', bg: '#0f0f0f', bg2: '#3d0707', a: '#ff0033' },
+  tubitv: { n: 'Tubi', bg: '#10002b', bg2: '#3a0a85', a: '#ffff13' },
+  plutotv: { n: 'Pluto TV', bg: '#050505', bg2: '#33320a', a: '#fff200' },
+  roku: { n: 'The Roku Channel', bg: '#0f0520', bg2: '#3c1578', a: '#a678ff' },
+  amcplus: { n: 'AMC+', bg: '#050505', bg2: '#2b2b2b', a: '#ffd200' },
+  gain: { n: 'Gain' }, tabii: { n: 'tabii' }, puhutv: { n: 'puhutv' },
+};
+const pfName = (id, n) => PF_THEME[id]?.n || n || '';
+const PF = { kind: '', sort: store.get('pf_sort', 'rating'), list: null, at: 0 };
+
+function loadPlatforms() {
+  if (!PF.list || Date.now() - PF.at > 5 * 60e3) {
+    PF.at = Date.now();
+    PF.list = api.get('/api/platforms').catch(e => { PF.list = null; throw e; });
+  }
+  return PF.list;
+}
+
+function openSheet() {
+  const el = $('#detail');
+  if (el.classList.contains('open')) return;
+  el.classList.add('open');
+  pushOverlay('detail', () => { el.classList.remove('open'); detailKey = null; });
+}
+
+async function openPlatform(id) {
+  openSheet();
+  const key = 'p:' + id;
+  if (detailKey !== key) PF.kind = '';
+  detailKey = key;
+  $('#detail-scroll').scrollTop = 0;
+  const close = `<button class="close" data-action="back" aria-label="${T('Kapat')}">${icon('x')}</button>`;
+  if (!PF.list) $('#detail-sheet').innerHTML = `${close}<div style="padding:120px;display:grid;place-items:center"><div class="spin"></div></div>`;
+  let list;
+  try { list = await loadPlatforms(); } catch {
+    if (detailKey === key) $('#detail-sheet').innerHTML = close + emptyState('Bilgiler alınamadı', 'Sunucuya ulaşılamadı.', 'globe');
+    return;
+  }
+  if (detailKey !== key) return;
+  renderPlatform(list.find(p => p.id === id) || { id, n: id, l: '', wl: '', m: [], s: [] }, list);
+}
+
+// A colour from the logo for platforms that aren't in PF_THEME: the average of its strong, not too dark pixels.
+function logoColour(src, done) {
+  const im = new Image();
+  im.onload = () => {
+    try {
+      const c = document.createElement('canvas'); c.width = c.height = 24;
+      const g = c.getContext('2d'); g.drawImage(im, 0, 0, 24, 24);
+      const d = g.getImageData(0, 0, 24, 24).data;
+      let r = 0, gr = 0, b = 0, n = 0;
+      for (let i = 0; i < d.length; i += 4) {
+        const mx = Math.max(d[i], d[i + 1], d[i + 2]), mn = Math.min(d[i], d[i + 1], d[i + 2]);
+        if (d[i + 3] < 200 || mx < 60 || mx - mn < 50) continue;
+        r += d[i]; gr += d[i + 1]; b += d[i + 2]; n++;
+      }
+      if (n > 8) done([r / n, gr / n, b / n].map(Math.round));
+    } catch {}
+  };
+  im.src = src;
+}
+
+// Colours on the page as CSS variables (no color-mix: the LG TVs' browser is too old for it).
+function pfApply(box, rgb, bg, bg2) {
+  const [r, g, b] = rgb, mix = f => `rgb(${Math.round(r * f)},${Math.round(g * f)},${Math.round(b * f)})`;
+  box.style.setProperty('--pf', `rgb(${r},${g},${b})`);
+  box.style.setProperty('--pf-soft', `rgba(${r},${g},${b},.35)`);
+  box.style.setProperty('--pf-ink', .299 * r + .587 * g + .114 * b > 150 ? '#0b0b0f' : '#fff');
+  box.style.setProperty('--pf-bg', bg || mix(.06));
+  box.style.setProperty('--pf-bg2', bg2 || mix(.32));
+}
+const hexRgb = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+
+const PF_SORTS = [['rating', 'Puan'], ['added', 'Yeni eklenen'], ['year', 'Yıl'], ['name', 'İsim (A–Z)']];
+
+function renderPlatform(pf, list) {
+  const theme = PF_THEME[pf.id] || {};
+  const name = pfName(pf.id, pf.n);
+  const movies = pf.m.map(tm => S.tmMovie.get(tm)).filter(Boolean);
+  const series = pf.s.map(tm => S.tmSeries.get(tm)).filter(Boolean);
+  const all = [...new Set([...movies, ...series])];
+  const shown = sortItems(PF.kind === 'm' ? movies : PF.kind === 's' ? series : all, PF.sort);
+  const wall = sortItems(all.filter(x => x.ph), 'rating').slice(0, 14);
+  const logo = pf.l ? `<img src="/img/tmdb/w92${esc(pf.l)}" alt="${esc(name)}">` : pf.wl ? `<img class="wide" src="/img/tmdb/w92${esc(pf.wl)}" alt="${esc(name)}">` : `<b>${esc(name.slice(0, 1))}</b>`;
+  const counts = [movies.length ? T('{n} film', { n: movies.length }) : '', series.length ? T('{n} dizi', { n: series.length }) : ''].filter(Boolean).join(' · ');
+  const chip = (attr, v, cur, label) => `<button class="chip${cur === v ? ' on' : ''}" ${attr}="${v}">${label}</button>`;
+  const others = list.filter(p => p.id !== pf.id && (p.l || p.wl) && (p.m.some(tm => S.tmMovie.has(tm)) || p.s.some(tm => S.tmSeries.has(tm)))).slice(0, 16);
+  $('#detail-sheet').innerHTML = `
+    <button class="close" data-action="back" aria-label="${T('Kapat')}">${icon('x')}</button>
+    <div class="pf" id="pf">
+      <header class="pf-hero">
+        <div class="pf-wall" aria-hidden="true">${wall.map(x => `<img src="${img(x.kind, x.id, 'poster', 185)}" alt="" loading="lazy" onerror="this.remove()">`).join('')}</div>
+        <div class="pf-head">
+          <div class="pf-logo${pf.l ? '' : ' wide'}">${logo}</div>
+          <div class="pf-title"><small>${T('Arşivimizde')}</small><h1>${esc(name)}</h1><p>${counts || T('Bu platformdan arşivde içerik yok')}</p></div>
+        </div>
+      </header>
+      <div class="pf-body">
+        ${all.length ? `<div class="pf-bar">
+          <div class="pf-chips">${chip('data-pfk', '', PF.kind, T('Tümü'))}${movies.length && series.length ? chip('data-pfk', 'm', PF.kind, T('Filmler')) + chip('data-pfk', 's', PF.kind, T('Diziler')) : ''}</div>
+          <div class="pf-chips">${PF_SORTS.map(([v, l]) => chip('data-pfs', v, PF.sort, T(l))).join('')}</div>
+        </div>
+        <div class="grid pf-grid">${shown.map(it => posterCard(it, { caption: true })).join('')}</div>`
+        : emptyState('Bu platformdan içerik yok', 'Arşivdeki film ve dizilerden hiçbiri bu platformda değil.')}
+        ${others.length ? `<div class="section pf-more"><div class="section-head"><h3>${T('Diğer platformlar')}</h3></div>
+          <div class="pf-others">${others.map(p => { const n = esc(pfName(p.id, p.n)); return `<button class="pf-other" data-open="p:${esc(p.id)}" aria-label="${n}"><span class="pf-ol${p.l ? '' : ' wide'}"><img src="/img/tmdb/w92${esc(p.l || p.wl)}" alt="" onerror="this.remove()"></span><span class="pf-on">${n}</span><small>${p.m.length + p.s.length}</small></button>`; }).join('')}</div></div>` : ''}
+      </div>
+    </div>`;
+  const box = $('#pf');
+  if (theme.a) pfApply(box, hexRgb(theme.a), theme.bg, theme.bg2);
+  else if (pf.l || pf.wl) logoColour(`/img/tmdb/w92${pf.l || pf.wl}`, rgb => { if (detailKey === 'p:' + pf.id) pfApply(box, rgb); });
+  box.onclick = e => {
+    const k = e.target.closest('[data-pfk]'), so = e.target.closest('[data-pfs]');
+    if (!k && !so) return;
+    if (k) PF.kind = k.dataset.pfk; else { PF.sort = so.dataset.pfs; store.set('pf_sort', PF.sort); }
+    const sel = k ? `[data-pfk="${PF.kind}"]` : `[data-pfs="${PF.sort}"]`;
+    renderPlatform(pf, list);
+    const again = $('#pf ' + sel); if (again && document.documentElement.classList.contains('kb')) again.focus();
+  };
 }
 
 // Downloads are for phones and computers; TVs (webOS, the Android TV app's WebView) have nowhere to save a file.
@@ -2160,11 +2317,7 @@ async function onlineTitle(kind, tm) {
 async function openOnlineDetail(key) {
   const [k, tm] = key.split(':');
   const kind = k === 'om' ? 'm' : 's';
-  const el = $('#detail');
-  if (!el.classList.contains('open')) {
-    el.classList.add('open');
-    pushOverlay('detail', () => { el.classList.remove('open'); detailKey = null; });
-  }
+  openSheet();
   detailKey = key;
   $('#detail-scroll').scrollTop = 0;
   const base = itemByKey(key);

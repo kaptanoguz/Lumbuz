@@ -21,6 +21,11 @@ const EN = {
   '{a} klipleri': 'More from {a}', 'Benzer Klipler': 'Similar Music Videos', 'Başka Klipler': 'More Music Videos', 'Albüm': 'Album',
   'Yıl': 'Year', 'Tür': 'Genre',
 
+  // platform pages (Netflix, Disney+…)
+  '{p} arşivi': '{p} in our library', 'Arşivimizde': 'In our library', 'Diğer platformlar': 'Other platforms', 'Puan': 'Rating',
+  'Bu platformdan arşivde içerik yok': 'Nothing from this platform in the library yet', 'Bu platformdan içerik yok': 'Nothing from this platform',
+  'Arşivdeki film ve dizilerden hiçbiri bu platformda değil.': 'None of the movies and series in the library are on this platform.',
+
   // navigation and page titles
   'Lumbuz ana sayfa': 'Lumbuz home', 'Ana Sayfa': 'Home', 'Filmler': 'Movies', 'Diziler': 'Series',
   'Koleksiyonlar': 'Collections', 'Canlı TV': 'Live TV', 'Canlı': 'Live', 'Listem': 'My List', 'Ayarlar': 'Settings',

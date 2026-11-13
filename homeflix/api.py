@@ -362,7 +362,15 @@ def api_credits(kind, iid):
         abort(503)
     if request_lang() == 'en' and r['tagline_en']:
         data = {**data, 'tagline': r['tagline_en']}
+    if data.get('prov'):
+        data = {**data, 'prov': metadata.with_ids(data['prov'])}
     return jsonify(data)
+
+
+@app.route('/api/platforms')
+def api_platforms():
+    """Streaming platforms with the library's titles on them (TMDb ids), for the platform pages."""
+    return jsonify(metadata.platforms())
 
 
 # ---------------------------------------------------------------- user state
@@ -923,6 +931,7 @@ def api_online_title(kind, tm):
     if not data:
         abort(404)
     data = dict(data)
+    data['prov'] = metadata.with_ids(data.get('prov'))
     with session() as c:
         table = 'movies' if kind == 'm' else 'series'
         local = c.execute(f"SELECT id FROM {table} WHERE tmdb_id = ? LIMIT 1", (tm,)).fetchone()
