@@ -1002,6 +1002,8 @@ button.prov:hover { transform: translateY(-2px) scale(1.06); }
 .pf-ol.wide img { object-fit: contain; }
 .pf-on { font-size: 13px; font-weight: 600; text-align: center; line-height: 1.2; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pf-other small { font-size: 12px; color: var(--dim); }
+.pf-all .pf-ol { display: grid; place-items: center; background: rgba(255,255,255,.08); box-shadow: none; }
+.pf-all .pf-ol .icon { width: 26px; height: 26px; }
 @media (max-width: 860px) {
   .pf-hero { height: 260px; }
   .pf-head { left: 18px; right: 18px; bottom: 18px; gap: 16px; }

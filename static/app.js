@@ -543,7 +543,7 @@ function openSheet() {
 async function openPlatform(id) {
   openSheet();
   const key = 'p:' + id;
-  if (detailKey !== key) PF.kind = '';
+  if (detailKey !== key) { PF.kind = ''; PF.allOthers = false; }
   detailKey = key;
   $('#detail-scroll').scrollTop = 0;
   const close = `<button class="close" data-action="back" aria-label="${T('Kapat')}">${icon('x')}</button>`;
@@ -601,7 +601,11 @@ function renderPlatform(pf, list) {
   const logo = pf.l ? `<img src="/img/tmdb/w92${esc(pf.l)}" alt="${esc(name)}">` : pf.wl ? `<img class="wide" src="/img/tmdb/w92${esc(pf.wl)}" alt="${esc(name)}">` : `<b>${esc(name.slice(0, 1))}</b>`;
   const counts = [movies.length ? T('{n} film', { n: movies.length }) : '', series.length ? T('{n} dizi', { n: series.length }) : ''].filter(Boolean).join(' · ');
   const chip = (attr, v, cur, label) => `<button class="chip${cur === v ? ' on' : ''}" ${attr}="${v}">${label}</button>`;
-  const others = list.filter(p => p.id !== pf.id && (p.l || p.wl) && (p.m.some(tm => S.tmMovie.has(tm)) || p.s.some(tm => S.tmSeries.has(tm)))).slice(0, 16);
+  // Every other platform: the well-known ones (PF_THEME) first, then the rest, each by number of titles.
+  // The first rows show at once, the rest behind a button so the TV remote doesn't have to pass 80 logos.
+  const others = list.filter(p => p.id !== pf.id && (p.l || p.wl) && (p.m.some(tm => S.tmMovie.has(tm)) || p.s.some(tm => S.tmSeries.has(tm))))
+    .map((p, i) => ({ p, i })).sort((a, b) => (!PF_THEME[a.p.id] - !PF_THEME[b.p.id]) || a.i - b.i).map(o => o.p);
+  const firstN = PF.allOthers ? others.length : 21;
   $('#detail-sheet').innerHTML = `
     <button class="close" data-action="back" aria-label="${T('Kapat')}">${icon('x')}</button>
     <div class="pf" id="pf">
@@ -620,13 +624,20 @@ function renderPlatform(pf, list) {
         <div class="grid pf-grid">${shown.map(it => posterCard(it, { caption: true })).join('')}</div>`
         : emptyState('Bu platformdan içerik yok', 'Arşivdeki film ve dizilerden hiçbiri bu platformda değil.')}
         ${others.length ? `<div class="section pf-more"><div class="section-head"><h3>${T('Diğer platformlar')}</h3></div>
-          <div class="pf-others">${others.map(p => { const n = esc(pfName(p.id, p.n)); return `<button class="pf-other" data-open="p:${esc(p.id)}" aria-label="${n}"><span class="pf-ol${p.l ? '' : ' wide'}"><img src="/img/tmdb/w92${esc(p.l || p.wl)}" alt="" onerror="this.remove()"></span><span class="pf-on">${n}</span><small>${p.m.length + p.s.length}</small></button>`; }).join('')}</div></div>` : ''}
+          <div class="pf-others">${others.slice(0, firstN).map(p => { const n = esc(pfName(p.id, p.n)); return `<button class="pf-other" data-open="p:${esc(p.id)}" aria-label="${n}"><span class="pf-ol${p.l ? '' : ' wide'}"><img src="/img/tmdb/w92${esc(p.l || p.wl)}" alt="" onerror="this.remove()"></span><span class="pf-on">${n}</span><small>${p.m.length + p.s.length}</small></button>`; }).join('')}${others.length > firstN ? `<button class="pf-other pf-all" data-pfall="1"><span class="pf-ol">${icon('plus')}</span><span class="pf-on">${T('Tüm platformlar')}</span><small>+${others.length - firstN}</small></button>` : ''}</div></div>` : ''}
       </div>
     </div>`;
   const box = $('#pf');
   if (theme.a) pfApply(box, hexRgb(theme.a), theme.bg, theme.bg2);
   else if (pf.l || pf.wl) logoColour(`/img/tmdb/w92${pf.l || pf.wl}`, rgb => { if (detailKey === 'p:' + pf.id) pfApply(box, rgb); });
   box.onclick = e => {
+    if (e.target.closest('[data-pfall]')) {
+      PF.allOthers = true;
+      const n = box.querySelectorAll('.pf-other').length - 1;
+      renderPlatform(pf, list);
+      const next = document.querySelectorAll('#pf .pf-other')[n]; if (next) next.focus();
+      return;
+    }
     const k = e.target.closest('[data-pfk]'), so = e.target.closest('[data-pfs]');
     if (!k && !so) return;
     if (k) PF.kind = k.dataset.pfk; else { PF.sort = so.dataset.pfs; store.set('pf_sort', PF.sort); }

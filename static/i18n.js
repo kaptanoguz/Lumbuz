@@ -22,7 +22,7 @@ const EN = {
   'Yıl': 'Year', 'Tür': 'Genre',
 
   // platform pages (Netflix, Disney+…)
-  '{p} arşivi': '{p} in our library', 'Arşivimizde': 'In our library', 'Diğer platformlar': 'Other platforms', 'Puan': 'Rating',
+  '{p} arşivi': '{p} in our library', 'Arşivimizde': 'In our library', 'Diğer platformlar': 'Other platforms', 'Tüm platformlar': 'All platforms', 'Puan': 'Rating',
   'Bu platformdan arşivde içerik yok': 'Nothing from this platform in the library yet', 'Bu platformdan içerik yok': 'Nothing from this platform',
   'Arşivdeki film ve dizilerden hiçbiri bu platformda değil.': 'None of the movies and series in the library are on this platform.',
 
