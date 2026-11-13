@@ -386,11 +386,19 @@ def _yt_avatar(cid):
     if not yt:
         return None
     try:
-        status, body, _, _ = _read(f'https://www.youtube.com/channel/{yt}', _YT_HEADERS, limit=600_000)
+        status, body, _, _ = _read(f'https://www.youtube.com/channel/{yt}', _YT_HEADERS, limit=2_000_000)  # the picture sits ~850 KB in
     except (requests.RequestException, OSError):
         return None
     m = re.search(r'<meta property="og:image" content="(https://yt3\.[^"]+)"', body) if status == 200 else None
     return re.sub(r'=s\d+-', '=s240-', m.group(1)) if m else None
+
+
+def _get_logo(url):
+    try:
+        r = _http.get(url, timeout=20, headers={'Accept': 'image/png,image/jpeg'})
+    except requests.RequestException:
+        return None
+    return r if r.status_code == 200 and len(r.content) >= 100 else None
 
 
 def fetch_logos(force=False):
@@ -421,11 +429,13 @@ def fetch_logos(force=False):
         if ext not in LOGO_EXT:
             m = re.search(r'\.(png|svg|jpg|webp)(\?|$)', best['url'], re.I)
             ext = m.group(1).lower() if m else ''
-        try:
-            r = _http.get(best['url'], timeout=20, headers={'Accept': 'image/png,image/jpeg'})
-            if r.status_code != 200 or len(r.content) < 100:
-                continue
-        except requests.RequestException:
+        r = _get_logo(best['url'])
+        if r is None and 'yt3.' not in best['url']:
+            # iptv-org's image host (imgur) refuses the online server's address, so the YouTube picture is used instead.
+            avatar = _yt_avatar(cid)
+            r = _get_logo(avatar) if avatar else None
+            ext = ''
+        if r is None:
             continue
         if not ext:
             kind = r.headers.get('Content-Type', '')
