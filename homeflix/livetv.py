@@ -63,6 +63,12 @@ CHANNELS = [
     ('HTSporTV.tr', 'HT Spor', 'spor', '1080p', ['https://ciner.daioncdn.net/ht-spor/ht-spor.m3u8?app=web']),
     ('FIFAPlus.uk', 'FIFA+', 'spor', '720p', ['https://a62dad94.wurl.com/master/f36d25e7e52f1ba8d7e56eb859c636563214f541/UmFrdXRlblRWLWV1X0ZJRkFQbHVzRW5nbGlzaF9ITFM/playlist.m3u8']),
 
+    ('RedBullTV.at', 'Red Bull TV', 'spor', 'HD', ['https://rbmn-live.akamaized.net/hls/live/590964/BoRB-AT/master.m3u8']),
+    # Live during events and marathons; otherwise their newest video plays.
+    ('Olympics.ch', 'Olympics', 'spor', 'HD', ['yt:UCTl3QQTvqHFjurroKxexy2Q']),
+    ('WWE.us', 'WWE', 'spor', 'HD', ['yt:UCJ5v_MCY6GNUBTO8-D3XoAg']),
+    ('UFC.us', 'UFC', 'spor', 'HD', ['yt:UCvgfXK4nTYKudb0rFR6noLA']),
+
     ('TRTBelgesel.tr', 'TRT Belgesel', 'belgesel', '720p', ['https://tv-trtbelgesel.medya.trt.com.tr/master.m3u8']),
     ('NASATV.us', 'NASA TV', 'belgesel', 'HD', ['yt:UCLA_DiR1FfKNvjuUpBHmylQ']),
     ('DWDocumentary.de', 'DW Documentary', 'belgesel', 'HD', ['yt:UCW39zufHfsuGgpLviKh297Q#uploads']),
@@ -80,6 +86,16 @@ CHANNELS = [
     ('TRTCocuk.tr', 'TRT Çocuk', 'cocuk', '1440p', ['https://tv-trtcocuk.medya.trt.com.tr/master.m3u8']),
     ('MinikaCocuk.tr', 'Minika Çocuk', 'cocuk', '720p', ['https://rnttwmjcin.turknet.ercdn.net/lcpmvefbyo/minikago_cocuk/minikago_cocuk.m3u8']),
     ('MinikaGo.tr', 'Minika Go', 'cocuk', '720p', ['https://rnttwmjcin.turknet.ercdn.net/lcpmvefbyo/minikago/minikago.m3u8']),
+
+    ('PeppaPig.uk', 'Peppa Pig', 'cocuk', 'HD', ['yt:UCAOtE1V7Ots4DjM8JLlrYgg']),
+    ('BabyBus.cn', 'BabyBus', 'cocuk', 'HD', ['yt:UCpYye8D5fFMUPf9nSfgd4bA']),
+    ('SuperSimpleSongs.ca', 'Super Simple Songs', 'cocuk', 'HD', ['yt:UCLsooMJoIpl_7ux2jvdPB-Q']),
+    ('Pinkfong.kr', 'Pinkfong Baby Shark', 'cocuk', 'HD', ['yt:UCcdwLMPsaU2ezNSJU1nFoBQ']),
+    ('PJMasks.fr', 'PJ Masks', 'cocuk', 'HD', ['yt:UCY2jUnU118sVkdj2xafiJ0g']),
+    ('MrBean.uk', 'Mr. Bean', 'cocuk', 'HD', ['yt:UCkAGrHCLFmlK3H2kd6isipg']),
+    ('SesameStreet.us', 'Sesame Street', 'cocuk', 'HD', ['yt:UCoookXUzPciGrEZEXmh4Jjg']),
+    ('Oddbods.sg', 'Oddbods', 'cocuk', 'HD', ['yt:UCtlth0w7_mYqpHPViMhQ99Q']),
+    ('WBKids.us', 'WB Kids (Tom & Jerry, Looney Tunes)', 'cocuk', 'HD', ['yt:UC9trsD1jCTXXtN3xIOIU8gg']),
 
     ('TRTMuzik.tr', 'TRT Müzik', 'muzik', '720p', ['https://tv-trtmuzik.medya.trt.com.tr/master.m3u8']),
     ('PowerTurkTV.tr', 'Power Türk', 'muzik', '1080p', ['https://livetv.powerapp.com.tr/powerturkTV/powerturkhd.smil/playlist.m3u8']),
@@ -100,6 +116,14 @@ CHANNELS = [
     ('Number1Rap.tr', 'Number1 Rap', 'muzik', '720p', ['https://b01c02nl.mediatriple.net/videoonlylive/mtkgeuihrlfwlive/u_stream_5c9e198784bdc_1/playlist.m3u8',
                                                       'https://b01c02nl.mediatriple.net/videoonlylive/mtkgeuihrlfwlive/broadcast_5c9e19877b340.smil/playlist.m3u8']),
     ('DreamTurk.tr', 'Dream Türk', 'muzik', '720p', ['https://live.duhnet.tv/S2/HLS_LIVE/dreamturknp/playlist.m3u8']),
+
+    ('LofiGirl.fr', 'Lofi Girl', 'muzik', 'HD', ['yt:UCSJ4gkVC6NrvII8umztf0Ow']),
+    ('ChillhopMusic.nl', 'Chillhop Radio', 'muzik', 'HD', ['yt:UCOxqgCwgOqC2lMqC5PYz_Dg']),
+    ('SpinninRecords.nl', "Spinnin' Records Radio", 'muzik', 'HD', ['yt:UCpDJl2EmP7Oh90Vylx0dZtA']),
+    ('MonstercatSilk.ca', 'Monstercat Silk', 'muzik', 'HD', ['yt:UCX4sShAQf01LYjYQhG2ZgKg']),
+    ('CafeMusicBGM.jp', 'Cafe Music BGM (Jazz)', 'muzik', 'HD', ['yt:UCJhjE7wbdYAae1G25m0tHAA']),
+    ('ChillYourMind.de', 'ChillYourMind Radio', 'muzik', 'HD', ['yt:UCmDM6zuSTROOnZnjlt2RJGQ']),
+    ('HospitalRecords.uk', 'Hospital Records (DnB)', 'muzik', 'HD', ['yt:UCw49uOTAJjGUdoAeUcp7tOg']),
 
     ('SkyNews.uk', 'Sky News', 'dunya', 'HD', ['yt:UCoMdktPbSTixAyNGwb-UYkQ']),
     ('ABCNewsLive.us', 'ABC News Live', 'dunya', 'HD', ['yt:UCBi2mrWuNuyYy4gbM6fU18Q']),
