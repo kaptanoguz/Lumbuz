@@ -483,6 +483,87 @@ def providers(d):
     return (nets + out)[:6]
 
 
+# Names of one service that _service() doesn't join on its own: the HBO network is HBO Max's app, Apple TV is Apple TV+.
+_SERVICE_ALIASES = {'hbo': 'max', 'hbomax': 'max', 'appletv': 'appletvplus', 'amazonprimevideo': 'primevideo',
+                    'disney': 'disneyplus', 'paramount': 'paramountplus', 'blu': 'blutv', 'todtv': 'tod'}
+
+
+def _strip_the(name):
+    name = (name or '').strip()
+    return name[4:] if name.lower().startswith('the ') else name
+
+
+def service_id(name):
+    """A platform's id in links (/api/platforms, the platform page): 'Disney Plus' -> 'disneyplus',
+    'The Roku Channel' -> 'roku'."""
+    s = _service(_strip_the(name))
+    return _SERVICE_ALIASES.get(s, s)
+
+
+def service_name(name):
+    """A platform's name without its plan or reseller: 'Paramount Plus Premium' -> 'Paramount Plus',
+    'Lionsgate+ Amazon Channel' -> 'Lionsgate+'."""
+    words = (name or '').split()
+    first = 2 if words and words[0].lower() == 'the' else 1
+    for i, w in enumerate(words):
+        if i >= first and ''.join(ch for ch in w.lower() if ch.isalnum()) in _PLAN_WORDS:
+            return ' '.join(words[:i])
+    return ' '.join(words)
+
+
+def with_ids(prov):
+    """Platform logos as the detail pages get them: each with the id of its platform page."""
+    return [{**p, 'id': service_id(p.get('n'))} for p in prov or []]
+
+
+_platforms_cache = {'sig': None, 'data': None}
+
+
+def platforms():
+    """Every platform (Netflix, Disney+...) that carries a title of the library, with those titles' TMDb ids, built
+    from the logos saved for the detail pages (credits table, filled in the background for the whole library).
+    Kept in memory until the credits change."""
+    with session() as c:
+        sig = tuple(c.execute("SELECT COUNT(*), MAX(fetched_at) FROM credits").fetchone())
+        if sig == _platforms_cache['sig']:
+            return _platforms_cache['data']
+        rows = c.execute(
+            "SELECT c.kind, c.tmdb_id, c.data FROM credits c WHERE "
+            "(c.kind = 'movie' AND c.tmdb_id IN (SELECT tmdb_id FROM movies WHERE tmdb_id IS NOT NULL)) OR "
+            "(c.kind = 'tv' AND c.tmdb_id IN (SELECT tmdb_id FROM series WHERE tmdb_id IS NOT NULL))").fetchall()
+    out = {}
+    for r in rows:
+        try:
+            prov = json.loads(r['data'] or '{}').get('prov') or []
+        except ValueError:
+            continue
+        for p in prov:
+            pid = service_id(p.get('n'))
+            if not pid or not p.get('l'):
+                continue
+            name = service_name(p['n'])
+            e = out.setdefault(pid, {'id': pid, 'n': name, 'l': '', 'wl': '', 'm': [], 's': [], '_names': {}})
+            # The square app logo heads the page; a network's wide logo is kept for when there is no square one.
+            if p.get('w'):
+                e['wl'] = e['wl'] or p['l']
+            elif not e['l']:
+                e['l'] = p['l']
+            if not p.get('w'):
+                e['_names'][name] = e['_names'].get(name, 0) + 1
+            ids = e['m' if r['kind'] == 'movie' else 's']
+            if r['tmdb_id'] not in ids:
+                ids.append(r['tmdb_id'])
+    data = []
+    for e in out.values():
+        names = e.pop('_names')
+        if names:
+            e['n'] = max(names, key=lambda n: (names[n], -len(n)))  # the name most titles use, the shorter on a tie
+        data.append(e)
+    data.sort(key=lambda e: -(len(e['m']) + len(e['s'])))
+    _platforms_cache.update(sig=sig, data=data)
+    return data
+
+
 def _parse_credits(kind, d):
     if kind == 'movie':
         crew = (d.get('credits') or {}).get('crew') or []
