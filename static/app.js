@@ -2461,7 +2461,7 @@ function liveCard(ch) {
   const watching = LV.open && LV.cur?.id === ch.id;
   return `<button class="lv-card" data-live="${esc(ch.id)}"><span class="lv-no">${ch.no}</span>
     <span class="lv-name">${esc(ch.n)}</span><span class="lv-meta">${esc(liveCat(ch))}${ch.tr ? ' · ' + T('Türkiye') : ''}</span>
-    ${liveLogo(ch)}<span class="lv-badges"><span class="lv-pill${ch.dead && !watching ? ' off' : ''}">${T(watching ? 'İZLENİYOR' : ch.dead ? 'BOZUK' : 'CANLI')}</span>${ch.q ? `<span class="lv-q">${esc(ch.q)}</span>` : ''}</span></button>`;
+    ${liveLogo(ch)}<span class="lv-badges"><span class="lv-pill${ch.dead && !watching ? ' off' : ''}">${T(watching ? 'İZLENİYOR' : ch.dead ? 'BOZUK' : ch.ytl ? 'VİDEOLAR' : 'CANLI')}</span>${ch.q ? `<span class="lv-q">${esc(ch.q)}</span>` : ''}</span></button>`;
 }
 
 async function renderLive() {
@@ -2904,7 +2904,7 @@ function closeLiveList() {
 function showOSD(ch, typed) {
   const osd = $('#l-osd');
   osd.innerHTML = typed ? `<div class="no">${esc(typed)}<span style="opacity:.4">_</span></div>`
-    : `<div class="no">${ch.no}</div>${liveLogo(ch)}<div><strong>${esc(ch.n)}</strong><span>${esc(liveCat(ch))} · <span class="lv-dot"></span>${T('CANLI')}</span></div>`;
+    : `<div class="no">${ch.no}</div>${liveLogo(ch)}<div><strong>${esc(ch.n)}</strong><span>${esc(liveCat(ch))} · <span class="lv-dot"></span>${T(ch.ytl ? 'VİDEOLAR' : 'CANLI')}</span></div>`;
   osd.classList.add('show');
   clearTimeout(LV.osdT);
   LV.osdT = setTimeout(() => osd.classList.remove('show'), typed ? 1600 : 3200);
@@ -3005,7 +3005,9 @@ function tuneLive(ch) {
     const f = $('#l-frame');
     f.hidden = false;
     // The current live video by id (looked up by the server) plays on more devices than the by-channel embed.
-    f.src = ch.ytv ? `https://www.youtube.com/embed/${encodeURIComponent(ch.ytv)}?autoplay=1&playsinline=1&rel=0`
+    // A channel without a 24/7 live stream plays its own videos one after another (ytl: its uploads playlist).
+    f.src = ch.ytl ? `https://www.youtube.com/embed/videoseries?list=${encodeURIComponent(ch.ytl)}&autoplay=1&playsinline=1&rel=0`
+      : ch.ytv ? `https://www.youtube.com/embed/${encodeURIComponent(ch.ytv)}?autoplay=1&playsinline=1&rel=0`
       : `https://www.youtube.com/embed/live_stream?channel=${encodeURIComponent(ch.yt)}&autoplay=1&playsinline=1&rel=0`;
     f.onload = () => { if (seq === LV.seq) $('#l-loading').classList.add('off'); };
     return;
