@@ -24,11 +24,13 @@ CATEGORIES = [('ulusal', 'Ulusal'), ('haber', 'Haber'), ('spor', 'Spor'), ('belg
 CHANNELS = [
     ('TRT1.tr', 'TRT 1', 'ulusal', '1440p', ['https://tv-trt1.medya.trt.com.tr/master.m3u8']),
     ('KanalD.tr', 'Kanal D', 'ulusal', '1080p', ['https://demiroren.daioncdn.net/kanald/kanald.m3u8?app=kanald_web&ce=3']),
-    ('ATV.tr', 'ATV', 'ulusal', '1080p', ['https://rnttwmjcin.turknet.ercdn.net/lcpmvefbyo/atv/atv_1080p.m3u8']),
+    ('ATV.tr', 'ATV', 'ulusal', '1080p', ['https://rnttwmjcin.turknet.ercdn.net/lcpmvefbyo/atv/atv.m3u8',
+                                      'https://rnttwmjcin.turknet.ercdn.net/lcpmvefbyo/atv/atv_720p.m3u8']),
     ('StarTV.tr', 'Star TV', 'ulusal', '720p', ['https://dogus.daioncdn.net/startv/startv_720p.m3u8?app=a20ac41e-bdc3-4aa1-934d-26b484480ac9&ce=3']),
     ('TV8.tr', 'TV8', 'ulusal', '1080p', ['https://tv8.daioncdn.net/tv8/tv8.m3u8?app=7ddc255a-ef47-4e81-ab14-c0e5f2949788&ce=3',
                                          'https://tv8-live.daioncdn.net/tv8/tv8.m3u8']),
-    ('NOWTV.tr', 'NOW', 'ulusal', '720p', ['https://uycyyuuzyh.turknet.ercdn.net/nphindgytw/nowtv/nowtv.m3u8']),
+    ('NOWTV.tr', 'NOW', 'ulusal', '720p', ['https://uycyyuuzyh.turknet.ercdn.net/nphindgytw/nowtv/nowtv.m3u8',
+                                       'https://uycyyuuzyh.turknet.ercdn.net/nphindgytw/nowtv/nowtv_720p.m3u8']),
     ('Kanal7.tr', 'Kanal 7', 'ulusal', '1080p', ['https://kanal7-live.daioncdn.net/kanal7/kanal7.m3u8']),
     ('A2TV.tr', 'a2', 'ulusal', '1080p', ['https://rnttwmjcin.turknet.ercdn.net/lcpmvefbyo/a2tv/a2tv.m3u8']),
     ('TRTTurk.tr', 'TRT Türk', 'ulusal', '720p', ['https://tv-trtturk.medya.trt.com.tr/master.m3u8']),
@@ -184,15 +186,21 @@ def _check_url(url):
         if status != 200 or '#EXTM3U' not in body[:1024]:
             return False, None
         cors = headers.get('Access-Control-Allow-Origin') in ('*', 'http://homeflix.local')
-        variant = next((ln.strip() for ln in body.splitlines() if ln.strip() and not ln.startswith('#')), '')
-        if '#EXT-X-STREAM-INF' in body and variant:
-            vstatus, vbody, vheaders, _ = _read(urljoin(final, variant), {'Origin': 'http://homeflix.local'})
-            if vstatus != 200 or '#EXTM3U' not in vbody[:1024]:
-                return False, None
-            cors = cors and vheaders.get('Access-Control-Allow-Origin') in ('*', 'http://homeflix.local')
+        variants = [ln.strip() for ln in body.splitlines() if ln.strip() and not ln.startswith('#')]
+        if '#EXT-X-STREAM-INF' not in body or not variants:
+            return True, cors
+        # Players drop a quality that doesn't answer and use the next, so the channel is on air while any of its
+        # first few qualities answers (ATV's 1080p one is often dead while 720p plays).
+        for variant in variants[:3]:
+            try:
+                vstatus, vbody, vheaders, _ = _read(urljoin(final, variant), {'Origin': 'http://homeflix.local'})
+            except (requests.RequestException, OSError):
+                continue
+            if vstatus == 200 and '#EXTM3U' in vbody[:1024]:
+                return True, cors and vheaders.get('Access-Control-Allow-Origin') in ('*', 'http://homeflix.local')
+        return False, None
     except (requests.RequestException, OSError):
         return False, None
-    return True, cors
 
 
 # ---------------------------------------------------------------- playlist pass-through
@@ -250,23 +258,42 @@ YT_MAX_AGE = 3 * 3600
 _yt = {}
 
 
+_BROWSER_UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36'
+# SOCS answers YouTube's EU cookie question ("reject all"), so servers in Europe get the page instead of consent.youtube.com.
+_YT_HEADERS = {'Accept-Language': 'en', 'Cookie': 'CONSENT=YES+1; SOCS=CAI', 'User-Agent': _BROWSER_UA}
+
+
+def _yt_feed(channel_id):
+    """Video ids of the channel's newest uploads and live streams, newest first. The feed opens from data-centre
+    servers too, where YouTube's pages ask to sign in ("confirm you're not a bot")."""
+    try:
+        status, body, _, _ = _read(f'https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}', _YT_HEADERS)
+    except (requests.RequestException, OSError):
+        return []
+    return re.findall(r'<yt:videoId>([\w-]{11})</yt:videoId>', body) if status == 200 else []
+
+
 def youtube_live(channel_id):
     """The id of a YouTube channel's current live video (embedding the video works on more devices than YouTube's
     by-channel live embed). Looked up at most every YT_MAX_AGE; None when it can't be found. The video id sits
-    about 800 KB into YouTube's page, so the whole page is read."""
+    about 800 KB into YouTube's page, so the whole page is read. Where YouTube shows a bot check instead (the online
+    server's data-centre address), the page still names the live video, and the channel's feed confirms which one."""
     hit = _yt.get(channel_id)
     if hit and time.time() - hit[0] < YT_MAX_AGE:
         return hit[1]
     vid = hit[1] if hit else None
+    found, body = None, ''
     try:
-        status, body, _, _ = _read(f'https://www.youtube.com/channel/{channel_id}/live',
-                                   {'Accept-Language': 'en', 'Cookie': 'CONSENT=YES+1'}, limit=3_000_000)
-        m = re.search(r'<link rel="canonical" href="https://www\.youtube\.com/watch\?v=([\w-]{11})"', body) or \
-            re.search(r'"videoId":"([\w-]{11})"', body)
-        if status == 200 and m:
-            vid = m.group(1)
+        status, body, _, _ = _read(f'https://www.youtube.com/channel/{channel_id}/live', _YT_HEADERS, limit=3_000_000)
+        m = re.search(r'<link rel="canonical" href="https://www\.youtube\.com/watch\?v=([\w-]{11})"', body)
+        found = m.group(1) if status == 200 and m else None
     except (requests.RequestException, OSError):
         pass
+    if not found:
+        feed = _yt_feed(channel_id)
+        on_page = re.findall(r'"videoId":"([\w-]{11})"', body)
+        found = next((v for v in on_page if v in feed), None) or (feed[0] if feed else None)
+    vid = found or vid
     _yt[channel_id] = (time.time(), vid)
     return vid
 
