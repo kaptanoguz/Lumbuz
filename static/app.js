@@ -610,7 +610,7 @@ function renderPlatform(pf, list) {
     <button class="close" data-action="back" aria-label="${T('Kapat')}">${icon('x')}</button>
     <div class="pf" id="pf">
       <header class="pf-hero">
-        <div class="pf-wall" aria-hidden="true">${wall.map(x => `<img src="${img(x.kind, x.id, 'poster', 185)}" alt="" loading="lazy" onerror="this.remove()">`).join('')}</div>
+        <div class="pf-wall" aria-hidden="true">${wall.map(x => `<img src="${img(x.kind, x.id, 'poster', 185)}" alt="" onerror="this.remove()">`).join('')}</div>
         <div class="pf-head">
           <div class="pf-logo${pf.l ? '' : ' wide'}">${logo}</div>
           <div class="pf-title"><small>${T('Arşivimizde')}</small><h1>${esc(name)}</h1><p>${counts || T('Bu platformdan arşivde içerik yok')}</p></div>

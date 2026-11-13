@@ -967,9 +967,11 @@ button.prov:hover { transform: translateY(-2px) scale(1.06); }
 /* ---------------------------------------------------------------- platform pages (Netflix, Disney+…) */
 .pf { --pf: #a1a1aa; --pf-soft: rgba(161,161,170,.35); --pf-ink: #0b0b0f; --pf-bg: #111116; --pf-bg2: #2a2a33; background: linear-gradient(180deg, var(--pf-bg2) 0%, var(--pf-bg) 420px, var(--pf-bg) 100%); min-height: 70vh; transition: background .4s; }
 .pf-hero { position: relative; height: 340px; overflow: hidden; }
-.pf-wall { position: absolute; inset: -60px -40px auto; display: flex; flex-wrap: wrap; gap: 12px; transform: rotate(-8deg) scale(1.08); opacity: .32; }
-.pf-wall img { width: 128px; aspect-ratio: 2 / 3; object-fit: cover; border-radius: 8px; }
-.pf-hero::after { content: ""; position: absolute; inset: 0; background: linear-gradient(0deg, var(--pf-bg) 2%, transparent 70%), linear-gradient(90deg, var(--pf-bg2) 0%, transparent 75%); opacity: .95; }
+/* The tilted poster wall. Each poster is faded on its own and the wall gets its own GPU layer: fading the whole
+   rotated layer broke into blocks on some screens (Oğuz's screenshot, 2026-11-13). */
+.pf-wall { position: absolute; inset: -60px -40px auto; display: flex; flex-wrap: wrap; gap: 12px; transform: rotate(-8deg) scale(1.08) translateZ(0); will-change: transform; backface-visibility: hidden; }
+.pf-wall img { width: 128px; height: 192px; object-fit: cover; border-radius: 8px; opacity: .3; }
+.pf-hero::after { content: ""; position: absolute; inset: 0; background: linear-gradient(0deg, var(--pf-bg) 4%, transparent 72%), linear-gradient(90deg, var(--pf-bg2) 8%, transparent 80%); }
 .pf-head { position: absolute; z-index: 2; left: 44px; right: 44px; bottom: 30px; display: flex; align-items: flex-end; gap: 26px; }
 .pf-logo { flex: none; width: 124px; height: 124px; border-radius: 28px; overflow: hidden; display: grid; place-items: center; background: var(--pf-bg);
   box-shadow: 0 0 0 1px rgba(255,255,255,.12), 0 18px 50px rgba(0,0,0,.6), 0 0 70px var(--pf-soft); }
