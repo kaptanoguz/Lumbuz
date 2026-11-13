@@ -421,7 +421,8 @@ PROV_VERSION = 3  # bump when providers() changes, so cached credits are fetched
 
 # Words after which a provider name only names a plan or a reseller ("Paramount+ with Showtime",
 # "AMC+ Amazon Channel", "Netflix Standard with Ads"): the service is the part before them.
-_PLAN_WORDS = {'with', 'premium', 'basic', 'standard', 'essential', 'ads', 'channel', 'channels', 'amazon', 'roku', 'apple'}
+_PLAN_WORDS = {'with', 'premium', 'basic', 'standard', 'essential', 'ads', 'channel', 'channels', 'amazon', 'roku', 'apple',
+               'store'}
 # Networks that are streaming services. Other networks (BBC One, AMC, Syfy) only say where a series first aired.
 _STREAMING_NETWORKS = {'netflix', 'hulu', 'appletv', 'appletvplus', 'primevideo', 'disneyplus', 'hbo', 'max', 'paramountplus',
                        'peacock', 'showtime', 'starz', 'blutv', 'exxen', 'gain', 'tabii', 'tod', 'mubi', 'crunchyroll'}
@@ -512,8 +513,16 @@ def service_name(name):
 
 
 def with_ids(prov):
-    """Platform logos as the detail pages get them: each with the id of its platform page."""
-    return [{**p, 'id': service_id(p.get('n'))} for p in prov or []]
+    """Platform logos as the detail pages get them: each with the id of its platform page, and each platform once
+    (lists saved before a name was merged can hold 'Apple TV' and 'Apple TV Store')."""
+    out, seen = [], set()
+    for p in prov or []:
+        pid = service_id(p.get('n'))
+        if pid and pid in seen:
+            continue
+        seen.add(pid)
+        out.append({**p, 'id': pid})
+    return out
 
 
 _platforms_cache = {'sig': None, 'data': None}
