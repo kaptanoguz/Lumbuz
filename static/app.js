@@ -438,11 +438,22 @@ function pushOverlay(name, onClose) {
   document.body.classList.add('locked');
 }
 function back() { if (stack.length) history.back(); }
-window.addEventListener('popstate', () => {
-  const top = stack.pop();
-  if (top) top.onClose();
+// One popstate can go back several steps (closeDetail): close every overlay above the page we landed on.
+window.addEventListener('popstate', e => {
+  const keep = Math.min(stack.length - 1, Math.max(0, (e.state && e.state.ov) || 0));
+  while (stack.length > keep) { const top = stack.pop(); top.onClose(); }
   if (!stack.length) document.body.classList.remove('locked');
 });
+// The ✕ of the detail sheet closes it at once, with every title and platform page opened inside it (Oğuz's wish);
+// Back (remote, Escape) still steps back one page at a time.
+let closingDetail = false;
+function closeDetail() {
+  let n = 0;
+  for (let i = stack.length - 1; i >= 0; i--) { n++; if (stack[i].name === 'detail') break; }
+  if (!n || !stack.some(o => o.name === 'detail')) return back();
+  closingDetail = true;
+  history.go(-n);
+}
 
 /* ================================================================ detail */
 let detailKey = null;
@@ -491,7 +502,7 @@ function detailStep(key) {
   if (!$('#detail').classList.contains('open') || !prev || prev === key || !(key.startsWith('p:') || prev.startsWith('p:'))) return;
   const sc = $('#detail-scroll'), y = sc.scrollTop;
   pushOverlay('dview', () => {
-    if (detailKey === null) return;
+    if (detailKey === null || closingDetail) return;
     openDetail(prev, { back: true });
     setTimeout(() => { sc.scrollTop = y; }, 60);
   });
@@ -537,7 +548,7 @@ function openSheet() {
   const el = $('#detail');
   if (el.classList.contains('open')) return;
   el.classList.add('open');
-  pushOverlay('detail', () => { el.classList.remove('open'); detailKey = null; });
+  pushOverlay('detail', () => { el.classList.remove('open'); detailKey = null; closingDetail = false; });
 }
 
 async function openPlatform(id) {
@@ -546,7 +557,7 @@ async function openPlatform(id) {
   if (detailKey !== key) { PF.kind = ''; PF.allOthers = false; }
   detailKey = key;
   $('#detail-scroll').scrollTop = 0;
-  const close = `<button class="close" data-action="back" aria-label="${T('Kapat')}">${icon('x')}</button>`;
+  const close = `<button class="close" data-action="close-detail" aria-label="${T('Kapat')}">${icon('x')}</button>`;
   if (!PF.list) $('#detail-sheet').innerHTML = `${close}<div style="padding:120px;display:grid;place-items:center"><div class="spin"></div></div>`;
   let list;
   try { list = await loadPlatforms(); } catch {
@@ -607,7 +618,7 @@ function renderPlatform(pf, list) {
     .map((p, i) => ({ p, i })).sort((a, b) => (!PF_THEME[a.p.id] - !PF_THEME[b.p.id]) || a.i - b.i).map(o => o.p);
   const firstN = PF.allOthers ? others.length : 21;
   $('#detail-sheet').innerHTML = `
-    <button class="close" data-action="back" aria-label="${T('Kapat')}">${icon('x')}</button>
+    <button class="close" data-action="close-detail" aria-label="${T('Kapat')}">${icon('x')}</button>
     <div class="pf" id="pf">
       <header class="pf-hero">
         <div class="pf-wall" aria-hidden="true">${wall.map(x => `<img src="${img(x.kind, x.id, 'poster', 185)}" alt="" onerror="this.remove()">`).join('')}</div>
@@ -702,7 +713,7 @@ function renderDetail(it) {
   const versions = it.kind === 'm' && it.versions.length > 1 ? `<div class="section"><div class="section-head"><h3>${T('Sürümler')}</h3></div><div class="versions">
     ${it.versions.map((v, i) => `<div class="version-row"><button class="version" data-play="m:${v.id}" data-from="0">${icon('play', 'fill')}<span>${esc(v.t)}${i === 0 ? ' · ' + T('varsayılan') : ''}</span><small>${v.sz ? fmtSize(v.sz) : ''}</small></button>${CAN_DOWNLOAD ? `<button class="version-dl icon-btn" data-dl="m:${v.id}" title="${T('Bu sürümü indir')}" aria-label="${T('Bu sürümü indir')}">${icon('download')}</button>` : ''}</div>`).join('')}</div></div>` : '';
   $('#detail-sheet').innerHTML = `
-    <button class="close" data-action="back" aria-label="${T('Kapat')}">${icon('x')}</button>
+    <button class="close" data-action="close-detail" aria-label="${T('Kapat')}">${icon('x')}</button>
     ${detailHero(it, it.t, actions, metaLine(it))}
     <div class="d-body">
       <div class="d-grid"><div><p class="plot">${esc(it.p || T('Bu içerik için açıklama bulunamadı.'))}</p>${resumeNote}</div><div class="facts">${facts.join('')}</div></div>
@@ -721,7 +732,7 @@ function renderCollectionDetail(c) {
   const meta = [`<span>${T('{n} film', { n: c.titles.length })}</span>`, years.length ? `<span>${Math.min(...years)}–${Math.max(...years)}</span>` : '',
     c.parts > c.titles.length ? `<span>${T('Seride {n} film var', { n: c.parts })}</span>` : ''].filter(Boolean).join('<i class="sep"></i>');
   $('#detail-sheet').innerHTML = `
-    <button class="close" data-action="back" aria-label="${T('Kapat')}">${icon('x')}</button>
+    <button class="close" data-action="close-detail" aria-label="${T('Kapat')}">${icon('x')}</button>
     ${detailHero(c, c.name, `<button class="btn btn-play" data-play="m:${next.id}">${icon('play', 'fill')}${T(next === c.titles[0] ? 'Seriye Başla' : 'Sıradakini İzle')}</button>`, meta)}
     <div class="d-body">
       ${c.ov ? `<p class="plot" style="font-size:16px;color:#e4e4e7;margin:14px 0 0;max-width:760px;line-height:1.6">${esc(c.ov)}</p>` : ''}
@@ -2333,10 +2344,10 @@ async function openOnlineDetail(key) {
   $('#detail-scroll').scrollTop = 0;
   const base = itemByKey(key);
   if (base) renderOnlineDetail(base, null);
-  else $('#detail-sheet').innerHTML = `<button class="close" data-action="back" aria-label="${T('Kapat')}">${icon('x')}</button><div style="padding:120px;display:grid;place-items:center"><div class="spin"></div></div>`;
+  else $('#detail-sheet').innerHTML = `<button class="close" data-action="close-detail" aria-label="${T('Kapat')}">${icon('x')}</button><div style="padding:120px;display:grid;place-items:center"><div class="spin"></div></div>`;
   let data;
   try { data = await onlineTitle(kind, tm); } catch {
-    if (detailKey === key && !base) $('#detail-sheet').innerHTML = `<button class="close" data-action="back" aria-label="${T('Kapat')}">${icon('x')}</button>${emptyState('Bilgiler alınamadı', 'İnternet bağlantısını kontrol edin.', 'globe')}`;
+    if (detailKey === key && !base) $('#detail-sheet').innerHTML = `<button class="close" data-action="close-detail" aria-label="${T('Kapat')}">${icon('x')}</button>${emptyState('Bilgiler alınamadı', 'İnternet bağlantısını kontrol edin.', 'globe')}`;
     return;
   }
   if (detailKey !== key) return;
@@ -2371,7 +2382,7 @@ function renderOnlineDetail(it, data) {
   facts.push(`<div>${T('Kaynak')}: <b>frameXTV (internet)</b></div>`);
   const rec = (data?.rec || []).map(onlineItem);
   $('#detail-sheet').innerHTML = `
-    <button class="close" data-action="back" aria-label="${T('Kapat')}">${icon('x')}</button>
+    <button class="close" data-action="close-detail" aria-label="${T('Kapat')}">${icon('x')}</button>
     ${detailHero(it, it.t, actions, meta)}
     <div class="d-body">
       <div class="d-grid"><div>${data?.tagline ? `<p class="pp-tagline" style="margin:14px 0 0">${esc(data.tagline)}</p>` : ''}<p class="plot">${esc(it.p || T('Bu içerik için açıklama bulunamadı.'))}</p>${resumeNote}</div><div class="facts">${facts.join('')}</div></div>
@@ -3461,6 +3472,7 @@ document.addEventListener('click', async e => {
   if (act) {
     const a = act.dataset.action;
     if (a === 'back') return back();
+    if (a === 'close-detail') return closeDetail();
     if (a === 'search') return openSearch();
     if (a === 'settings') return openSettings();
     if (a === 'shuffle') return shuffleMovie();
@@ -3473,7 +3485,7 @@ document.addEventListener('click', async e => {
     if (a === 'clips-shuffle-artist') return playClips(shuffle(CL.lists.artist || []), 0);
     return settingsAction(a);
   }
-  if (t.hasAttribute('data-dismiss')) back();
+  if (t.hasAttribute('data-dismiss')) return t.closest('#detail') ? closeDetail() : back();
 });
 
 document.addEventListener('keydown', e => {
