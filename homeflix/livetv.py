@@ -67,6 +67,13 @@ CHANNELS = [
     ('NASATV.us', 'NASA TV', 'belgesel', 'HD', ['yt:UCLA_DiR1FfKNvjuUpBHmylQ']),
     ('DWDocumentary.de', 'DW Documentary', 'belgesel', 'HD', ['yt:UCW39zufHfsuGgpLviKh297Q#uploads']),
     ('FreeDocumentary.de', 'Free Documentary', 'belgesel', 'HD', ['yt:UCijcd0GR0fkxCAZwkiuWqtQ#uploads']),
+    ('NASASpaceflight.us', 'NASASpaceflight', 'belgesel', 'HD', ['yt:UCSUu1lih2RifWkKtDOJdsBA']),
+    ('WildEarth.za', 'WildEarth', 'belgesel', 'HD', ['yt:UCV6HJBZD_hZcIX9JVJ3dCXQ']),
+    # These run documentary marathons most of the time but not 24/7; when nothing is live, their newest video plays.
+    ('NationalGeographic.us', 'Nat Geo', 'belgesel', 'HD', ['yt:UCpVm7bg6pXKo1Pr6k5kxG9A']),
+    ('DiscoveryChannel.us', 'Discovery', 'belgesel', 'HD', ['yt:UCqOoboPm3uhY_YXhvhmL-WA']),
+    ('ScienceChannel.us', 'Science Channel', 'belgesel', 'HD', ['yt:UCvJiYiBUbw4tmpRSZT2r1Hw']),
+    ('RealStories.uk', 'Real Stories', 'belgesel', 'HD', ['yt:UCu4XcDBdnZkV6-5z2f16M0g']),
     ('NHKWorldJapan.jp', 'NHK World', 'belgesel', '1080p', ['https://masterpl.hls.nhkworld.jp/hls/w/live/smarttv.m3u8',
                                                              'https://media-tyo.hls.nhkworld.jp/hls/w/live/master.m3u8']),
 
@@ -95,6 +102,11 @@ CHANNELS = [
     ('DreamTurk.tr', 'Dream Türk', 'muzik', '720p', ['https://live.duhnet.tv/S2/HLS_LIVE/dreamturknp/playlist.m3u8']),
 
     ('SkyNews.uk', 'Sky News', 'dunya', 'HD', ['yt:UCoMdktPbSTixAyNGwb-UYkQ']),
+    ('ABCNewsLive.us', 'ABC News Live', 'dunya', 'HD', ['yt:UCBi2mrWuNuyYy4gbM6fU18Q']),
+    ('NBCNewsNOW.us', 'NBC News NOW', 'dunya', 'HD', ['yt:UCeY0bbntWzzVIaj2z3QigXg']),
+    ('CBSNews247.us', 'CBS News 24/7', 'dunya', 'HD', ['yt:UC8p1vwvWtl6T73JiExfWs1g']),
+    ('Africanews.cg', 'Africanews', 'dunya', 'HD', ['yt:UC1_E8NeF5QHY2dtdLRBCCLA']),
+    ('DWEspanol.de', 'DW Español', 'dunya', 'HD', ['yt:UCT4Jg8h03dD0iN3Pb5L0PMA']),
     ('TRTWorld.tr', 'TRT World', 'dunya', '1080p', ['https://tv-trtworld.medya.trt.com.tr/master.m3u8']),
     ('DW.de', 'DW English', 'dunya', '1080p', ['https://dwamdstream102.akamaized.net/hls/live/2015525/dwstream102/master.m3u8']),
     ('France24.fr', 'France 24', 'dunya', '1080p', ['https://live.france24.com/hls/live/2037218-b/F24_EN_HI_HLS/master_5000.m3u8',
@@ -367,6 +379,20 @@ def _pick_logo(entries):
     return max(entries, key=score) if entries else None
 
 
+def _yt_avatar(cid):
+    """The YouTube channel picture of a YouTube-only channel iptv-org has no logo for."""
+    ch = find(cid)
+    yt = next((u[3:].partition('#')[0] for u in ch['urls'] if u.startswith('yt:')), None) if ch else None
+    if not yt:
+        return None
+    try:
+        status, body, _, _ = _read(f'https://www.youtube.com/channel/{yt}', _YT_HEADERS, limit=600_000)
+    except (requests.RequestException, OSError):
+        return None
+    m = re.search(r'<meta property="og:image" content="(https://yt3\.[^"]+)"', body) if status == 200 else None
+    return re.sub(r'=s\d+-', '=s240-', m.group(1)) if m else None
+
+
 def fetch_logos(force=False):
     """Saves every channel's logo on the server (once; refreshed weekly) so devices without internet see them."""
     missing = [r[0] for r in CHANNELS if force or not logo_file(r[0]) or
@@ -386,6 +412,9 @@ def fetch_logos(force=False):
         best = _pick_logo(by_channel.get(cid, []))
         if (not best or not best.get('url')) and cid in LOGO_URLS:
             best = {'url': LOGO_URLS[cid], 'format': ''}
+        if not best or not best.get('url'):
+            avatar = _yt_avatar(cid)
+            best = {'url': avatar, 'format': ''} if avatar else None
         if not best or not best.get('url'):
             continue
         ext = (best.get('format') or '').lower()
