@@ -20,7 +20,7 @@ CATEGORIES = [('ulusal', 'Ulusal'), ('haber', 'Haber'), ('spor', 'Spor'), ('belg
 
 # id (iptv-org channel id, used for the logo), name, category, quality label, stream URLs (first that works wins),
 # extra flags. 'tr' marks channels that only open from inside Turkey. 'yt' streams are YouTube channel ids played
-# in YouTube's own embed (the channel's official 24/7 live stream).
+# in YouTube's own embed (the channel's official 24/7 live stream, or its own uploads where it has none).
 CHANNELS = [
     ('TRT1.tr', 'TRT 1', 'ulusal', '1440p', ['https://tv-trt1.medya.trt.com.tr/master.m3u8']),
     ('KanalD.tr', 'Kanal D', 'ulusal', '1080p', ['https://demiroren.daioncdn.net/kanald/kanald.m3u8?app=kanald_web&ce=3']),
@@ -64,6 +64,9 @@ CHANNELS = [
     ('FIFAPlus.uk', 'FIFA+', 'spor', '720p', ['https://a62dad94.wurl.com/master/f36d25e7e52f1ba8d7e56eb859c636563214f541/UmFrdXRlblRWLWV1X0ZJRkFQbHVzRW5nbGlzaF9ITFM/playlist.m3u8']),
 
     ('TRTBelgesel.tr', 'TRT Belgesel', 'belgesel', '720p', ['https://tv-trtbelgesel.medya.trt.com.tr/master.m3u8']),
+    ('NASATV.us', 'NASA TV', 'belgesel', 'HD', ['yt:UCLA_DiR1FfKNvjuUpBHmylQ']),
+    ('DWDocumentary.de', 'DW Documentary', 'belgesel', 'HD', ['yt:UCW39zufHfsuGgpLviKh297Q#uploads']),
+    ('FreeDocumentary.de', 'Free Documentary', 'belgesel', 'HD', ['yt:UCijcd0GR0fkxCAZwkiuWqtQ#uploads']),
     ('NHKWorldJapan.jp', 'NHK World', 'belgesel', '1080p', ['https://masterpl.hls.nhkworld.jp/hls/w/live/smarttv.m3u8',
                                                              'https://media-tyo.hls.nhkworld.jp/hls/w/live/master.m3u8']),
 
@@ -108,6 +111,11 @@ CHECK_TIMEOUT = 20
 # A channel is hidden only after this many failed checks in a row, so one hiccup doesn't make it disappear.
 DEAD_AFTER = 2
 LOGO_LIST = 'https://iptv-org.github.io/api/logos.json'
+# Logos for channels iptv-org doesn't list (YouTube-only channels): their YouTube channel pictures.
+LOGO_URLS = {
+    'DWDocumentary.de': 'https://yt3.googleusercontent.com/rgphL4c6DGPlwzkxIzE5tH0DPe1yuynH0nTdOAecCVIX5gUjJGsCwXtp9wnxjcsfqboL6C5aFg=s240-c-k-c0x00ffffff-no-rj',
+    'FreeDocumentary.de': 'https://yt3.googleusercontent.com/xKTkbX06Be5s6Kt6Ff28SIvDp4zyhJcZEJzmqjM12eKAfUEsSz-wvMhR0rx0Q7bc2dxFdiT4PA=s240-c-k-c0x00ffffff-no-rj',
+}
 LOGO_DIR = os.path.join(IMAGES_DIR, 'live')
 LOGO_MAX_AGE = 7 * 86400
 LOGO_EXT = ('png', 'svg', 'jpg', 'webp')
@@ -142,11 +150,16 @@ def channels():
         if url.startswith('yt:'):
             # 'yt:<channel id>' plays the channel's current live video; 'yt:<channel id>#<video id>' a fixed one
             # (a channel whose /live page shows a programme instead of its 24/7 feed).
+            # 'yt:<channel id>#uploads' plays the channel's videos one after another, newest first (a channel that
+            # has no 24/7 live stream, like DW Documentary).
             chan, _, fixed = url[3:].partition('#')
             item['yt'] = chan
-            vid = fixed or _yt.get(chan, (0, None))[1]
-            if vid:
-                item['ytv'] = vid
+            if fixed == 'uploads':
+                item['ytl'] = 'UU' + chan[2:]
+            else:
+                vid = fixed or _yt.get(chan, (0, None))[1]
+                if vid:
+                    item['ytv'] = vid
         else:
             item['url'] = url
             item['alt'] = [u for u in ch['urls'] if u != url and not u.startswith('yt:')]
@@ -371,18 +384,23 @@ def fetch_logos(force=False):
     saved = 0
     for cid in missing:
         best = _pick_logo(by_channel.get(cid, []))
+        if (not best or not best.get('url')) and cid in LOGO_URLS:
+            best = {'url': LOGO_URLS[cid], 'format': ''}
         if not best or not best.get('url'):
             continue
         ext = (best.get('format') or '').lower()
         if ext not in LOGO_EXT:
             m = re.search(r'\.(png|svg|jpg|webp)(\?|$)', best['url'], re.I)
-            ext = m.group(1).lower() if m else 'png'
+            ext = m.group(1).lower() if m else ''
         try:
-            r = _http.get(best['url'], timeout=20)
+            r = _http.get(best['url'], timeout=20, headers={'Accept': 'image/png,image/jpeg'})
             if r.status_code != 200 or len(r.content) < 100:
                 continue
         except requests.RequestException:
             continue
+        if not ext:
+            kind = r.headers.get('Content-Type', '')
+            ext = 'jpg' if 'jpeg' in kind else 'webp' if 'webp' in kind else 'png'
         old = logo_file(cid)
         if old:
             os.remove(old)

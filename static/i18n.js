@@ -204,7 +204,7 @@ const EN = {
   'Türk Dizileri': 'Turkish Series', 'En Yüksek Puanlı Filmler': 'Top Rated Movies', 'En Yüksek Puanlı Diziler': 'Top Rated Series',
 
   // live TV
-  'Türkiye': 'Turkey only', 'İZLENİYOR': 'WATCHING', 'CANLI': 'LIVE', 'Kanal listesi alınamadı': 'Could not load the channel list',
+  'Türkiye': 'Turkey only', 'İZLENİYOR': 'WATCHING', 'CANLI': 'LIVE', 'VİDEOLAR': 'VIDEOS', 'Kanal listesi alınamadı': 'Could not load the channel list',
   'Lumbuz sunucusuna ulaşılamıyor.': 'Cannot reach the Lumbuz server.', '{n} kanal': '{n} channel|{n} channels',
   'Kanal ara…': 'Search channels…', 'Son İzlediklerin': 'Recently Watched', 'Tüm Kanallar': 'All Channels',
   'Kanal bulunamadı': 'No channels found', 'Başka bir kategori ya da arama deneyin.': 'Try another category or search.',
