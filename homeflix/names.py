@@ -65,6 +65,12 @@ def clean_series_name(folder_name):
     return name or folder_name
 
 
+def series_year(folder_name):
+    """Year written on a series folder ("The Punisher (2017)"); tells apart shows that share a name."""
+    y = re.search(r'[\(\[\.\s](19\d{2}|20\d{2})(?=[\)\]\.\s]|$)', folder_name or '')
+    return y.group(1) if y else ''
+
+
 # Folders and Plex/Jellyfin file suffixes that hold a series' extras rather than episodes. Extras go to season 0.
 EXTRAS_DIR_RE = re.compile(r'^(specials?|extras?|featurettes?|behind[ ._-]?the[ ._-]?scenes|deleted[ ._-]?scenes|interviews?|'
                            r'scenes|shorts|trailers?|bonus|other|ekstra(lar)?|özel(ler)?|kamera[ ._-]?arkası)$', re.I)
@@ -137,7 +143,9 @@ def search_candidates(title):
     def add(c):
         c = re.sub(r'[\.\-_]', ' ', c)
         c = re.sub(r'\s+', ' ', c).strip(' ,:')
-        c = re.sub(r'\b(19\d{2}|20\d{2})\b', '', c).strip()
+        c = re.sub(r'\b(19\d{2}|20\d{2})\b', '', c)
+        c = re.sub(r'\(\s*\)|\[\s*\]', '', c)  # brackets left empty once the year is gone
+        c = re.sub(r'\s+', ' ', c).strip(' ,:')
         if c and len(c) > 1 and c not in cands:
             cands.append(c)
 

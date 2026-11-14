@@ -10,7 +10,8 @@ from collections import defaultdict
 from . import clips, state
 from .config import IMG_EXTS, POSTERS_DIR, VIDEO_EXTS
 from .db import library_dirs, session
-from .names import (EXTRA_BASE, VTS_RE, clean_display_title, clean_series_name, parse_season_episode, smart_title)
+from .names import (EXTRA_BASE, VTS_RE, clean_display_title, clean_series_name, parse_season_episode, series_year,
+                    smart_title)
 
 NON_POSTER_WORDS = ('backdrop', 'fanart', 'landscape', 'banner', 'thumb', 'logo', 'clearart', 'disc', 'background')
 scan_lock = threading.Lock()
@@ -103,7 +104,7 @@ def _scan(settings):
             if r['path'] not in found and (_under(r['path'], scanned) or not _under(r['path'], movie_dirs)):
                 c.execute("DELETE FROM movies WHERE id = ?", (r['id'],))
 
-        shows, seen, scanned = defaultdict(list), set(), []
+        shows, years, seen, scanned = defaultdict(list), {}, set(), []
         for series_dir in series_dirs:
             if not os.path.isdir(series_dir):
                 continue
@@ -119,7 +120,11 @@ def _scan(settings):
                     seen.add(path)
                     rel = os.path.relpath(path, series_dir)
                     season, episode = parse_season_episode(rel)
-                    shows[clean_series_name(rel.split(os.sep)[0])].append((season, episode, path, f))
+                    folder = rel.split(os.sep)[0]
+                    name = clean_series_name(folder)
+                    shows[name].append((season, episode, path, f))
+                    if not years.get(name):
+                        years[name] = series_year(folder)
             if n:
                 scanned.append(series_dir)
         ep_paths = set()
@@ -129,12 +134,16 @@ def _scan(settings):
             if loose:
                 eps = [e for e in eps if not (e[0] == 0 and e[1] == 0)]
                 eps += [(0, EXTRA_BASE + i, path, f) for i, (_, _, path, f) in enumerate(loose, 1)]
-            row = c.execute("SELECT id FROM series WHERE title = ?", (name,)).fetchone()
+            year = years.get(name) or ''
+            row = c.execute("SELECT id, year FROM series WHERE title = ?", (name,)).fetchone()
             if not row:
                 added = min(_file_info(p)[0] for _, _, p, _ in eps)
                 c.execute("INSERT INTO series (title, year, poster, rating, plot, genre, candidates, added_at) "
-                          "VALUES (?, '', '', '', '', '', ?, ?)", (name, json.dumps([name]), added))
-                row = c.execute("SELECT id FROM series WHERE title = ?", (name,)).fetchone()
+                          "VALUES (?, ?, '', '', '', '', ?, ?)", (name, year, json.dumps([name]), added))
+                row = c.execute("SELECT id, year FROM series WHERE title = ?", (name,)).fetchone()
+            elif year and not row['year']:
+                # The folder's year is what picks the right show among namesakes on TMDb.
+                c.execute("UPDATE series SET year = ? WHERE id = ?", (year, row['id']))
             sid = row['id']
             for season, episode, path, fname in eps:
                 ep_paths.add(path)
